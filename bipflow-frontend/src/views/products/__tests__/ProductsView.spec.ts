@@ -287,6 +287,13 @@ describe('ProductsView', () => {
     vi.stubGlobal('open', windowOpen)
 
     searchState.products.value = mockProducts
+    searchState.filters.value = {
+      search: '',
+      categoryId: undefined,
+      priceMin: undefined,
+      priceMax: undefined,
+      inStockOnly: false,
+    }
     cartState.itemCount.value = 0
 
     vi.mocked(useProductSearch).mockReturnValue(searchState as any)
@@ -454,7 +461,9 @@ describe('ProductsView', () => {
     wrapper.unmount()
     vi.mocked(storefrontAppearanceService.getPublicBanners).mockResolvedValue([
       {
+        placement: 'promotion',
         image_url: 'https://cdn.example.com/promo.png',
+        image_url_mobile: '',
         alt_text: 'Promocao relampago',
         title: 'Oferta relampago',
         subtitle: 'Somente hoje',
@@ -483,6 +492,32 @@ describe('ProductsView', () => {
 
     expect(wrapper.text()).toContain('Todas')
     expect(wrapper.find('.cart-drawer-stub').exists()).toBe(true)
+  })
+
+  it('shows an always-visible category nav (not only inside the filters sheet)', () => {
+    const nav = wrapper.find('[data-cy="storefront-category-nav"]')
+    expect(nav.exists()).toBe(true)
+    expect(nav.text()).toContain('Todos')
+    expect(nav.text()).toContain('Test Category')
+  })
+
+  it('applies a category immediately from the nav, without staging it', async () => {
+    const categoryChip = wrapper
+      .find('[data-cy="storefront-category-nav"]')
+      .findAll('button')
+      .find((button) => button.text() === 'Test Category')
+
+    await categoryChip!.trigger('click')
+
+    expect(searchState.updateFilters).toHaveBeenCalledWith({ categoryId: 1 })
+  })
+
+  it('returns to "Todos" from the nav', async () => {
+    const allChip = wrapper.get('[data-cy="storefront-category-chip-all"]')
+
+    await allChip.trigger('click')
+
+    expect(searchState.updateFilters).toHaveBeenCalledWith({ categoryId: undefined })
   })
 
   it('keeps the typed search space so compound terms can be entered naturally', async () => {
@@ -603,5 +638,33 @@ describe('ProductsView', () => {
     await nextTick()
 
     expect(wrapper.text()).toContain('Nenhum produto encontrado')
+  })
+
+  it('shows a category-aware empty state with a "Ver todos os produtos" action', async () => {
+    searchState.products.value = []
+    searchState.filters.value = { ...searchState.filters.value, categoryId: 1 } as any
+    await nextTick()
+
+    const emptyState = wrapper.get('[data-cy="storefront-empty-state"]')
+    expect(emptyState.text()).toContain('Test Category')
+    const viewAllButton = emptyState
+      .findAll('button')
+      .find((button) => button.text().includes('Ver todos os produtos'))
+    expect(viewAllButton).toBeDefined()
+
+    await viewAllButton!.trigger('click')
+
+    expect(searchState.updateFilters).toHaveBeenCalledWith({ categoryId: undefined })
+  })
+
+  it('does not offer "Ver todos os produtos" when the empty state has no category active', async () => {
+    searchState.products.value = []
+    await nextTick()
+
+    const emptyState = wrapper.get('[data-cy="storefront-empty-state"]')
+    const viewAllButton = emptyState
+      .findAll('button')
+      .find((button) => button.text().includes('Ver todos os produtos'))
+    expect(viewAllButton).toBeUndefined()
   })
 })

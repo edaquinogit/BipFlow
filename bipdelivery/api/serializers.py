@@ -1795,13 +1795,20 @@ class StorefrontBannerSerializer(
     status = serializers.CharField(read_only=True)
     button_url = serializers.CharField(read_only=True)
     position = serializers.IntegerField(required=False, min_value=0)
+    placement = serializers.ChoiceField(
+        choices=StorefrontBanner.PLACEMENT_CHOICES,
+        required=False,
+        default=StorefrontBanner.PLACEMENT_PROMOTION,
+    )
 
     class Meta:
         model = StorefrontBanner
         fields = [
             "id",
             "store_id",
+            "placement",
             "image_url",
+            "image_url_mobile",
             "alt_text",
             "title",
             "subtitle",
@@ -1851,11 +1858,21 @@ class StorefrontBannerSerializer(
             field_name="image_url",
         )
 
+    def validate_image_url_mobile(self, value: str) -> str:
+        if not value:
+            return value
+        return validate_storefront_media_url_ownership(
+            value,
+            store=self.context.get("store"),
+            field_name="image_url_mobile",
+        )
+
     def create(self, validated_data):
         store: Store = self.context["store"]
+        placement = validated_data.get("placement", StorefrontBanner.PLACEMENT_PROMOTION)
         if "position" not in validated_data:
             last_position = (
-                StorefrontBanner.objects.filter(store=store)
+                StorefrontBanner.objects.filter(store=store, placement=placement)
                 .order_by("-position", "-id")
                 .values_list("position", flat=True)
                 .first()
@@ -1865,14 +1882,16 @@ class StorefrontBannerSerializer(
 
 
 class PublicStorefrontBannerSerializer(serializers.ModelSerializer):
-    """Public, visitor-safe promotional banner payload."""
+    """Public, visitor-safe banner payload (hero carousel or promotions rail)."""
 
     status = serializers.CharField(read_only=True)
 
     class Meta:
         model = StorefrontBanner
         fields = [
+            "placement",
             "image_url",
+            "image_url_mobile",
             "alt_text",
             "title",
             "subtitle",
@@ -1885,27 +1904,39 @@ class PublicStorefrontBannerSerializer(serializers.ModelSerializer):
 
 
 class StorefrontBannerReorderSerializer(serializers.Serializer):
-    """Persist merchant-defined promotional banner order."""
+    """Persist merchant-defined banner order, scoped to one placement."""
 
     ids = serializers.ListField(
         child=serializers.IntegerField(min_value=1),
         allow_empty=False,
     )
+    placement = serializers.ChoiceField(
+        choices=StorefrontBanner.PLACEMENT_CHOICES,
+        required=False,
+        default=StorefrontBanner.PLACEMENT_PROMOTION,
+    )
 
     def validate_ids(self, value):
-        store: Store = self.context["store"]
         unique_ids = list(dict.fromkeys(value))
         if len(unique_ids) != len(value):
             raise serializers.ValidationError("Nao repita banners na ordenacao.")
+        return unique_ids
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        store: Store = self.context["store"]
+        placement = attrs.get("placement", StorefrontBanner.PLACEMENT_PROMOTION)
 
         current_ids = set(
-            StorefrontBanner.objects.filter(store=store).values_list("id", flat=True)
+            StorefrontBanner.objects.filter(
+                store=store, placement=placement
+            ).values_list("id", flat=True)
         )
-        if current_ids != set(unique_ids):
+        if current_ids != set(attrs["ids"]):
             raise serializers.ValidationError(
-                "Envie todos os banners desta loja para reordenar."
+                {"ids": "Envie todos os banners desta loja e categoria para reordenar."}
             )
-        return unique_ids
+        return attrs
 
 
 class PublicStorefrontAppearanceSerializer(serializers.ModelSerializer):

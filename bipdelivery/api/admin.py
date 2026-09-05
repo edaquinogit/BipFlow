@@ -226,6 +226,7 @@ class StorefrontBannerAdmin(StoreScopedAdminMixin, admin.ModelAdmin):
     list_display = (
         "id",
         "store",
+        "placement",
         "title",
         "position",
         "is_active",
@@ -234,7 +235,7 @@ class StorefrontBannerAdmin(StoreScopedAdminMixin, admin.ModelAdmin):
         "ends_at",
         "updated_at",
     )
-    list_filter = ("is_active", "store", "destination_type")
+    list_filter = ("placement", "is_active", "store", "destination_type")
     search_fields = ("title", "subtitle", "alt_text")
     readonly_fields = ("button_url", "created_at", "updated_at")
 

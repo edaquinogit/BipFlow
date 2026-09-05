@@ -119,7 +119,9 @@ function buildBanner(overrides: Partial<StorefrontBanner> = {}): StorefrontBanne
   return {
     id: 100,
     store_id: 1,
+    placement: 'promotion',
     image_url: 'https://cdn.example.com/promo.png',
+    image_url_mobile: '',
     alt_text: 'Banner promocional',
     title: 'Promocao',
     subtitle: 'Itens selecionados',
