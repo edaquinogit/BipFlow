@@ -175,7 +175,36 @@ describe('CartDrawer', () => {
       }
       const wrapper = mountDrawer({ items: [item], itemCount: 3 })
       expect(wrapper.get('[data-cy="checkout-continue-button"]').attributes('disabled')).toBeDefined()
-      expect(wrapper.text()).toContain('2 disponiveis nesta cor')
+      expect(wrapper.text()).toContain('2 disponíveis nesta cor')
+    })
+
+    it('shows a real thumbnail using the variant image URL, not the color, when the variant has one', () => {
+      const item: CartItem = {
+        ...buildItem(),
+        variant: {
+          id: 40, name: 'Vermelho', color_hex: '#CC0000', price: null, effective_price: '42.50',
+          stock_quantity: 5, image: 'https://example.com/vermelho.jpg', is_active: true, position: 0,
+        },
+      }
+      const wrapper = mountDrawer({ items: [item] })
+
+      const dotImg = wrapper.find('img[alt=""]')
+      expect(dotImg.exists()).toBe(true)
+      expect(dotImg.attributes('src')).toBe('https://example.com/vermelho.jpg')
+    })
+
+    it('falls back to the color background, with no <img>, when the variant has no image', () => {
+      const item: CartItem = {
+        ...buildItem(),
+        variant: {
+          id: 41, name: 'Verde', color_hex: '#00AA00', price: null, effective_price: '42.50',
+          stock_quantity: 5, image: null, is_active: true, position: 0,
+        },
+      }
+      const wrapper = mountDrawer({ items: [item] })
+
+      expect(wrapper.find('img[alt=""]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('Verde')
     })
 
     it('blocks "Continuar" when the store has no WhatsApp configured', () => {

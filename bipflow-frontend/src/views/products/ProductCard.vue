@@ -62,10 +62,20 @@
           <span
             v-for="variant in activeVariants.slice(0, 4)"
             :key="variant.id"
-            class="h-2.5 w-2.5 rounded-full border border-black/10"
-            :style="{ backgroundColor: variant.color_hex }"
+            class="h-2.5 w-2.5 shrink-0 overflow-hidden rounded-full border border-black/10"
+            :style="variantSwatchImage(variant) ? undefined : { backgroundColor: variant.color_hex }"
             :title="variant.name"
-          />
+          >
+            <img
+              v-if="variantSwatchImage(variant)"
+              :src="variantSwatchImage(variant)!"
+              alt=""
+              class="h-full w-full object-cover"
+              loading="lazy"
+              decoding="async"
+              @error="handleVariantSwatchImageError(variant)"
+            />
+          </span>
           <span v-if="activeVariants.length > 4" class="text-[0.625rem] text-[var(--store-text-muted)]">
             +{{ activeVariants.length - 4 }}
           </span>
@@ -96,7 +106,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { ShoppingBagIcon } from '@heroicons/vue/24/outline'
 import StorefrontButton from '@/components/storefront/StorefrontButton.vue'
 import type { Product, ProductVariant } from '@/types/product'
@@ -182,6 +192,26 @@ const availabilityNote = computed(() => {
 const ctaLabel = computed(() => (canOrderProduct.value ? 'Adicionar' : 'Indisponível'))
 
 const handleImageError = handleProductImageError
+
+// Ciclo 9: the color dots must show the variant's own image when one was
+// uploaded, and fall back to the color chip otherwise -- never paint over a
+// valid image with a solid color. `brokenVariantImageIds` keeps a 404'd
+// upload falling back to the color chip without retrying it in a loop.
+const brokenVariantImageIds = ref<Set<number>>(new Set())
+
+function variantSwatchImage(variant: ProductVariant): string | null {
+  if (!variant.image || brokenVariantImageIds.value.has(variant.id)) {
+    return null
+  }
+  return variant.image
+}
+
+function handleVariantSwatchImageError(variant: ProductVariant): void {
+  if (brokenVariantImageIds.value.has(variant.id)) {
+    return
+  }
+  brokenVariantImageIds.value = new Set(brokenVariantImageIds.value).add(variant.id)
+}
 
 function handleAddToCart(): void {
   if (!canOrderProduct.value) {

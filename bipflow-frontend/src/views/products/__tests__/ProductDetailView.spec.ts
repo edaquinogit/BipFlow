@@ -387,6 +387,106 @@ describe('ProductDetailView', () => {
     expect(wrapper.text()).toContain('59,90')
   })
 
+  describe('variant selector: image vs. color (Ciclo 9)', () => {
+    async function mountWithVariants(variants: unknown[]): Promise<void> {
+      wrapper.unmount()
+      vi.mocked(productService.getPublicBySlug).mockResolvedValue({
+        ...productDetail,
+        variants,
+      } as any)
+      wrapper = mountView()
+      await flushPromises()
+      await nextTick()
+    }
+
+    it('renders an <img> using the variant image URL when the variant has one', async () => {
+      await mountWithVariants([
+        {
+          id: 20, name: 'Vermelho', color_hex: '#CC0000', stock_quantity: 5,
+          image: 'https://example.com/vermelho.jpg', is_active: true, position: 0,
+        },
+      ])
+
+      const swatchImg = wrapper.find('[aria-label="Selecionar cor Vermelho"] img')
+      expect(swatchImg.exists()).toBe(true)
+      expect(swatchImg.attributes('src')).toBe('https://example.com/vermelho.jpg')
+      // The color must never paint over a valid image.
+      expect(wrapper.find('[aria-label="Selecionar cor Vermelho"] span[style]').exists()).toBe(false)
+    })
+
+    it('falls back to the color swatch, with no <img>, when the variant has no image', async () => {
+      await mountWithVariants([
+        {
+          id: 21, name: 'Verde', color_hex: '#00AA00', stock_quantity: 5,
+          image: null, is_active: true, position: 0,
+        },
+      ])
+
+      const button = wrapper.find('[aria-label="Selecionar cor Verde"]')
+      expect(button.find('img').exists()).toBe(false)
+      expect(button.find('span[style]').attributes('style')).toContain('background-color: rgb(0, 170, 0)')
+    })
+
+    it('swaps between an image variant and a color-only variant with no leftover markup', async () => {
+      await mountWithVariants([
+        {
+          id: 22, name: 'ComImagem', color_hex: '#111111', stock_quantity: 5,
+          image: 'https://example.com/com-imagem.jpg', is_active: true, position: 0,
+        },
+        {
+          id: 23, name: 'SoCor', color_hex: '#222222', stock_quantity: 5,
+          image: null, is_active: true, position: 1,
+        },
+      ])
+
+      expect(wrapper.find('[aria-label="Selecionar cor ComImagem"] img').exists()).toBe(true)
+      expect(wrapper.find('[aria-label="Selecionar cor SoCor"] img').exists()).toBe(false)
+
+      await wrapper.find('[aria-label="Selecionar cor SoCor"]').trigger('click')
+      await nextTick()
+
+      // Selecting the color-only variant must not leave an <img> behind on
+      // its own button, and the image-variant button must still show its
+      // image (switching variants doesn't touch unrelated swatches).
+      expect(wrapper.find('[aria-label="Selecionar cor SoCor"] img').exists()).toBe(false)
+      expect(wrapper.find('[aria-label="Selecionar cor ComImagem"] img').exists()).toBe(true)
+    })
+
+    it('falls back to the color swatch when the variant image fails to load, without looping', async () => {
+      await mountWithVariants([
+        {
+          id: 24, name: 'Quebrada', color_hex: '#3366FF', stock_quantity: 5,
+          image: 'https://example.com/broken.jpg', is_active: true, position: 0,
+        },
+      ])
+
+      const img = wrapper.find('[aria-label="Selecionar cor Quebrada"] img')
+      expect(img.exists()).toBe(true)
+
+      await img.trigger('error')
+      await nextTick()
+
+      const button = wrapper.find('[aria-label="Selecionar cor Quebrada"]')
+      expect(button.find('img').exists()).toBe(false)
+      expect(button.find('span[style]').attributes('style')).toContain('background-color: rgb(51, 102, 255)')
+
+      // A second error report for the same variant must not throw or loop.
+      await flushPromises()
+      expect(button.find('img').exists()).toBe(false)
+    })
+
+    it('marks an out-of-stock variant as unavailable in its accessible name', async () => {
+      await mountWithVariants([
+        {
+          id: 25, name: 'Esgotada', color_hex: '#999999', stock_quantity: 0,
+          image: null, is_active: true, position: 0,
+        },
+      ])
+
+      expect(wrapper.find('[aria-label="Selecionar cor Esgotada, indisponível"]').exists()).toBe(true)
+    })
+  })
+
   it('falls back to copying the public product link when native share fails', async () => {
     const share = vi.fn().mockRejectedValue(new Error('share_failed'))
     const writeText = vi.fn().mockResolvedValue(undefined)

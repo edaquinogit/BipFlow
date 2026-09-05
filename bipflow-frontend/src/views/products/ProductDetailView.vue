@@ -57,14 +57,14 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m0 3.75h.008v.008H12v-.008zm8.25-.75a8.25 8.25 0 10-16.5 0 8.25 8.25 0 0016.5 0z" />
           </svg>
         </div>
-        <h2 class="mt-5 text-2xl font-semibold text-[var(--store-text)]">Nao foi possivel abrir este produto</h2>
+        <h2 class="mt-5 text-2xl font-semibold text-[var(--store-text)]">Não foi possível abrir este produto</h2>
         <p class="mt-3 text-base text-[var(--store-text-muted)]">
-          {{ errorMessage || 'O produto pode ter sido removido ou esta temporariamente indisponivel.' }}
+          {{ errorMessage || 'O produto pode ter sido removido ou está temporariamente indisponível.' }}
         </p>
         <div class="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <StorefrontButton @click="loadProduct">Tentar novamente</StorefrontButton>
           <StorefrontButton variant="outline" @click="goBackToCatalog">
-            Voltar ao catalogo
+            Voltar ao catálogo
           </StorefrontButton>
         </div>
       </div>
@@ -124,12 +124,13 @@
                 :alt="`Miniatura ${product.name}`"
                 class="h-full w-full object-contain p-1.5"
                 loading="lazy"
+                @error="handleThumbnailImageError"
               />
             </button>
           </div>
         </section>
 
-        <aside class="min-w-0 lg:sticky lg:top-24 lg:self-start">
+        <aside class="min-w-0 lg:sticky lg:top-24 lg:self-start" style="overflow-anchor: none">
           <!-- 1. Context -->
           <div class="flex items-start justify-between gap-3">
             <p class="min-w-0 truncate text-[0.8125rem] font-medium text-[var(--store-text-muted)]">
@@ -185,17 +186,28 @@
                   v-for="variant in activeVariants"
                   :key="variant.id"
                   type="button"
-                  class="relative inline-flex h-11 w-11 items-center justify-center rounded-full border-2 bg-[var(--store-surface)] transition focus:outline-none"
+                  class="relative inline-flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border-2 bg-[var(--store-surface)] transition focus:outline-none"
                   :class="selectedVariant?.id === variant.id
                     ? 'border-[var(--store-brand-on-light)]'
                     : 'border-[var(--store-border)] hover:border-[var(--store-brand-on-light)]'"
                   :disabled="variantAvailableStock(variant) <= 0"
-                  :aria-label="`Selecionar cor ${variant.name}`"
+                  :aria-label="variantSwatchAriaLabel(variant)"
                   :aria-pressed="selectedVariant?.id === variant.id"
                   :title="variant.name"
                   @click="handleSelectVariant(variant)"
                 >
+                  <img
+                    v-if="variantSwatchImage(variant)"
+                    :src="variantSwatchImage(variant)!"
+                    alt=""
+                    class="h-full w-full rounded-full object-cover"
+                    :class="{ 'opacity-30': variantAvailableStock(variant) <= 0 }"
+                    loading="lazy"
+                    decoding="async"
+                    @error="handleVariantSwatchImageError(variant)"
+                  />
                   <span
+                    v-else
                     class="h-7 w-7 rounded-full border border-black/10"
                     :class="{ 'opacity-30': variantAvailableStock(variant) <= 0 }"
                     :style="{ backgroundColor: variant.color_hex }"
@@ -470,7 +482,7 @@ const {
 
 const productDescription = computed(() => (
   product.value?.description?.trim()
-    || 'Peca selecionada para uma compra simples, com informacoes essenciais reunidas em uma unica tela.'
+    || 'Peça selecionada para uma compra simples, com informações essenciais reunidas em uma única tela.'
 ))
 
 const activeVariants = computed<ProductVariant[]>(() =>
@@ -643,6 +655,33 @@ function handleSelectVariant(variant: ProductVariant): void {
   selectedVariantId.value = variant.id
   activeImage.value = variant.image || productImages.value[0] || FALLBACK_IMAGE_URL
   startCarousel()
+}
+
+// Ciclo 9: the variant selector must show the variant's own image when one
+// was uploaded, falling back to the colour swatch only when there isn't
+// one -- never the other way around. `brokenVariantImageIds` tracks images
+// that failed to load so a 404'd upload also falls back to colour, without
+// retrying the same broken URL in a loop.
+const brokenVariantImageIds = ref<Set<number>>(new Set())
+
+function variantSwatchImage(variant: ProductVariant): string | null {
+  if (!variant.image || brokenVariantImageIds.value.has(variant.id)) {
+    return null
+  }
+  return variant.image
+}
+
+function handleVariantSwatchImageError(variant: ProductVariant): void {
+  if (brokenVariantImageIds.value.has(variant.id)) {
+    return
+  }
+  brokenVariantImageIds.value = new Set(brokenVariantImageIds.value).add(variant.id)
+}
+
+function variantSwatchAriaLabel(variant: ProductVariant): string {
+  return variantAvailableStock(variant) > 0
+    ? `Selecionar cor ${variant.name}`
+    : `Selecionar cor ${variant.name}, indisponível`
 }
 
 function handlePointerDown(event: PointerEvent): void {
@@ -984,6 +1023,15 @@ function handleImageError(event: Event): void {
   if (img.src !== FALLBACK_IMAGE_URL) {
     img.src = FALLBACK_IMAGE_URL
     activeImage.value = FALLBACK_IMAGE_URL
+  }
+}
+
+// A broken *thumbnail* only needs its own <img> swapped -- unlike the hero
+// image, it must not force-select the fallback as the active image.
+function handleThumbnailImageError(event: Event): void {
+  const img = event.target as HTMLImageElement
+  if (img.src !== FALLBACK_IMAGE_URL) {
+    img.src = FALLBACK_IMAGE_URL
   }
 }
 

@@ -54,6 +54,7 @@ from bipdelivery.api.models import (  # noqa: E402
     SaleOrderItem,
     StockMovement,
     Store,
+    StoreMembership,
     StoreSettings,
 )
 from bipdelivery.api.views import CheckoutWhatsAppView  # noqa: E402
@@ -1152,6 +1153,289 @@ class ProductAPIHealthTest(TestCase):
         response: Any = self.client.delete(f"/api/v1/categories/{self.category.id}/")  # type: ignore
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertTrue(Category.objects.filter(id=self.category.id).exists())  # type: ignore
+
+
+class ProductVariantImageAPITest(TestCase):
+    """Ciclo 9: the storefront kept showing a solid color instead of the
+    uploaded variant image. The backend was never actually the problem --
+    these tests pin down the full upload -> persist -> public-read contract
+    so a future regression here is caught before it reaches the frontend."""
+
+    client: APIClient
+    user: User
+    category: Category
+    product: Product
+
+    def setUp(self) -> None:
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username="variant_image_user", password="testpass123", is_staff=True,
+        )
+        self.category = Category.objects.create(name="Camisetas", slug="camisetas")
+        self.product = Product.objects.create(
+            name="Camiseta Premium",
+            sku="CAM-IMG-001",
+            price=Decimal("89.90"),
+            stock_quantity=4,
+            category=self.category,
+        )
+
+    @override_settings(MEDIA_ROOT=build_test_media_root())
+    def test_creating_a_variant_with_an_image_persists_and_returns_it(self) -> None:
+        self.client.force_authenticate(user=self.user)
+        response: Any = self.client.post(
+            "/api/v1/products/",
+            {
+                "name": "Camiseta Colorida",
+                "sku": "CAM-IMG-002",
+                "price": "89.90",
+                "category": self.category.id,
+                "variants_payload": json.dumps(
+                    [
+                        {
+                            "name": "Vermelho",
+                            "color_hex": "#CC0000",
+                            "stock_quantity": 3,
+                            "position": 0,
+                            "is_active": True,
+                            "image_upload_index": 0,
+                        }
+                    ]
+                ),
+                "variant_images[0]": build_test_image("vermelho.png"),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, msg=response.data)
+        variant = ProductVariant.objects.get(product_id=response.data["id"])
+        self.assertTrue(bool(variant.image))
+
+        api_variant = response.data["variants"][0]
+        self.assertIsNotNone(api_variant["image"])
+        self.assertTrue(api_variant["image"].startswith("http"))
+        self.assertIn("vermelho", api_variant["image"])
+
+    @override_settings(MEDIA_ROOT=build_test_media_root())
+    def test_a_variant_created_without_an_image_reports_none(self) -> None:
+        self.client.force_authenticate(user=self.user)
+        response: Any = self.client.post(
+            "/api/v1/products/",
+            {
+                "name": "Camiseta Sem Imagem",
+                "sku": "CAM-IMG-003",
+                "price": "89.90",
+                "category": self.category.id,
+                "variants_payload": json.dumps(
+                    [
+                        {
+                            "name": "Preto",
+                            "color_hex": "#000000",
+                            "stock_quantity": 3,
+                            "position": 0,
+                            "is_active": True,
+                        }
+                    ]
+                ),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, msg=response.data)
+        self.assertIsNone(response.data["variants"][0]["image"])
+
+    @override_settings(MEDIA_ROOT=build_test_media_root())
+    def test_replacing_a_variants_image_updates_the_stored_file_and_the_public_response(self) -> None:
+        self.client.force_authenticate(user=self.user)
+        variant = ProductVariant.objects.create(
+            product=self.product, name="Azul", color_hex="#3366FF",
+            stock_quantity=3, position=0,
+            image=build_test_image("azul-original.png"),
+        )
+        original_image_name = variant.image.name
+
+        response: Any = self.client.patch(
+            f"/api/v1/products/{self.product.id}/",
+            {
+                "variants_payload": json.dumps(
+                    [
+                        {
+                            "id": variant.id,
+                            "name": "Azul",
+                            "color_hex": "#3366FF",
+                            "stock_quantity": 3,
+                            "position": 0,
+                            "is_active": True,
+                            "image_upload_index": 0,
+                        }
+                    ]
+                ),
+                "variant_images[0]": build_test_image("azul-novo.png"),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=response.data)
+        variant.refresh_from_db()
+        self.assertNotEqual(variant.image.name, original_image_name)
+        self.assertIn("azul-novo", variant.image.name)
+
+        api_variant = next(v for v in response.data["variants"] if v["id"] == variant.id)
+        self.assertIn("azul-novo", api_variant["image"])
+
+    @override_settings(MEDIA_ROOT=build_test_media_root())
+    def test_removing_a_variants_image_clears_it_and_keeps_the_rest_of_the_variant(self) -> None:
+        self.client.force_authenticate(user=self.user)
+        variant = ProductVariant.objects.create(
+            product=self.product, name="Verde", color_hex="#00AA00",
+            stock_quantity=6, position=0,
+            image=build_test_image("verde.png"),
+        )
+
+        response: Any = self.client.patch(
+            f"/api/v1/products/{self.product.id}/",
+            {
+                "variants_payload": json.dumps(
+                    [
+                        {
+                            "id": variant.id,
+                            "name": "Verde",
+                            "color_hex": "#00AA00",
+                            "stock_quantity": 6,
+                            "position": 0,
+                            "is_active": True,
+                            "image": None,
+                        }
+                    ]
+                ),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, msg=response.data)
+        variant.refresh_from_db()
+        self.assertFalse(bool(variant.image))
+        self.assertEqual(variant.name, "Verde")
+        self.assertEqual(variant.stock_quantity, 6)
+
+        api_variant = next(v for v in response.data["variants"] if v["id"] == variant.id)
+        self.assertIsNone(api_variant["image"])
+
+    @override_settings(MEDIA_ROOT=build_test_media_root())
+    def test_a_variant_image_survives_a_fresh_query_after_saving(self) -> None:
+        self.client.force_authenticate(user=self.user)
+        create_response: Any = self.client.post(
+            "/api/v1/products/",
+            {
+                "name": "Camiseta Persistente",
+                "sku": "CAM-IMG-004",
+                "price": "89.90",
+                "category": self.category.id,
+                "variants_payload": json.dumps(
+                    [
+                        {
+                            "name": "Roxo",
+                            "color_hex": "#8800CC",
+                            "stock_quantity": 2,
+                            "position": 0,
+                            "is_active": True,
+                            "image_upload_index": 0,
+                        }
+                    ]
+                ),
+                "variant_images[0]": build_test_image("roxo.png"),
+            },
+            format="multipart",
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED, msg=create_response.data)
+        product_id = create_response.data["id"]
+        original_image_url = create_response.data["variants"][0]["image"]
+
+        # A brand-new, unauthenticated GET -- the public storefront path --
+        # must still resolve the same persisted image.
+        fresh_client = APIClient()
+        fetch_response: Any = fresh_client.get(f"/api/v1/products/{product_id}/")
+
+        self.assertEqual(fetch_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(fetch_response.data["variants"][0]["image"], original_image_url)
+
+    @override_settings(MEDIA_ROOT=build_test_media_root())
+    def test_an_invalid_variant_image_upload_is_rejected_and_leaves_other_fields_untouched(self) -> None:
+        self.client.force_authenticate(user=self.user)
+        not_an_image = SimpleUploadedFile(
+            "not-an-image.txt", b"this is not image data", content_type="text/plain",
+        )
+
+        response: Any = self.client.post(
+            "/api/v1/products/",
+            {
+                "name": "Camiseta Arquivo Invalido",
+                "sku": "CAM-IMG-005",
+                "price": "89.90",
+                "category": self.category.id,
+                "variants_payload": json.dumps(
+                    [
+                        {
+                            "name": "Preto",
+                            "color_hex": "#000000",
+                            "stock_quantity": 3,
+                            "position": 0,
+                            "is_active": True,
+                            "image_upload_index": 0,
+                        }
+                    ]
+                ),
+                "variant_images[0]": not_an_image,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(Product.objects.filter(sku="CAM-IMG-005").exists())
+
+    @override_settings(MEDIA_ROOT=build_test_media_root())
+    def test_cannot_attach_an_image_to_another_stores_variant(self) -> None:
+        other_store = Store.objects.create(name="Loja B", slug="loja-b-variant-image")
+        other_category = Category.objects.create(name="Categoria B", store=other_store, slug="categoria-b-img")
+        other_product = Product.objects.create(
+            name="Produto Loja B", price=Decimal("50.00"),
+            category=other_category, store=other_store,
+        )
+        other_variant = ProductVariant.objects.create(
+            product=other_product, name="Unica", color_hex="#111111",
+            stock_quantity=1, position=0,
+        )
+
+        other_user = User.objects.create_user(
+            username="variant_image_user_b", password="testpass123", is_staff=True,
+        )
+        StoreMembership.objects.create(store=other_store, user=other_user, role=StoreMembership.ROLE_MANAGER)
+        cross_tenant_client = APIClient()
+        cross_tenant_client.force_authenticate(user=other_user, token={"store_id": other_store.id})
+
+        # Attempting to reach the *other* tenant's product at all must 404 --
+        # store scoping, not variant-specific logic, is what should stop this.
+        response: Any = cross_tenant_client.patch(
+            f"/api/v1/products/{self.product.id}/",
+            {
+                "variants_payload": json.dumps([
+                    {
+                        "name": "Invasao",
+                        "color_hex": "#000000",
+                        "stock_quantity": 1,
+                        "position": 0,
+                        "is_active": True,
+                        "image_upload_index": 0,
+                    }
+                ]),
+                "variant_images[0]": build_test_image("invasao.png"),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        other_variant.refresh_from_db()
+        self.assertFalse(bool(other_variant.image))
 
 
 class DjangoHealthTest(TestCase):

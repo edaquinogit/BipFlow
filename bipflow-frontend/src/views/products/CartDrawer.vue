@@ -105,15 +105,25 @@
                       class="inline-flex min-w-0 items-center gap-1.5"
                     >
                       <span
-                        class="h-2.5 w-2.5 shrink-0 rounded-full border border-black/10"
-                        :style="{ backgroundColor: item.variant.color_hex }"
+                        class="h-2.5 w-2.5 shrink-0 overflow-hidden rounded-full border border-black/10"
+                        :style="variantDotImage(item.variant) ? undefined : { backgroundColor: item.variant.color_hex }"
                         aria-hidden="true"
-                      />
+                      >
+                        <img
+                          v-if="variantDotImage(item.variant)"
+                          :src="variantDotImage(item.variant)!"
+                          alt=""
+                          class="h-full w-full object-cover"
+                          loading="lazy"
+                          decoding="async"
+                          @error="handleVariantDotImageError(item.variant)"
+                        />
+                      </span>
                       <span class="truncate">{{ item.variant.name }}</span>
                     </span>
                     <span>{{ formatBRL(cartItemUnitPrice(item)) }} / unidade</span>
                     <span v-if="item.variant && item.quantity >= cartItemAvailableStock(item)" class="text-[var(--store-brand-on-light)]">
-                      {{ cartItemAvailableStock(item) }} disponiveis nesta cor
+                      {{ cartItemAvailableStock(item) }} disponíveis nesta cor
                     </span>
                   </p>
 
@@ -893,6 +903,26 @@ async function handleSubmitClick(): Promise<void> {
 
 function cartItemImage(item: CartItem): string {
   return item.variant?.image || item.product.image || fallbackImageUrl
+}
+
+// Ciclo 9: the small variant indicator next to the line-item name must
+// prefer the variant's own image over its color, same rule as the product
+// detail selector and the catalog card dots. `brokenVariantDotIds` falls a
+// 404'd image back to color without retrying it in a loop.
+const brokenVariantDotIds = ref<Set<number>>(new Set())
+
+function variantDotImage(variant: CartItem['variant']): string | null {
+  if (!variant?.image || brokenVariantDotIds.value.has(variant.id)) {
+    return null
+  }
+  return variant.image
+}
+
+function handleVariantDotImageError(variant: CartItem['variant']): void {
+  if (!variant || brokenVariantDotIds.value.has(variant.id)) {
+    return
+  }
+  brokenVariantDotIds.value = new Set(brokenVariantDotIds.value).add(variant.id)
 }
 
 function cartItemLabel(item: CartItem): string {
