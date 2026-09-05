@@ -126,6 +126,7 @@
     <main
       class="mx-auto max-w-7xl px-4 py-6 pb-24 sm:px-6 lg:px-8"
       :aria-busy="isLoading ? 'true' : 'false'"
+      style="overflow-anchor: none"
     >
       <p class="sr-only" aria-live="polite">{{ liveRegionMessage }}</p>
 
@@ -836,10 +837,24 @@ onMounted(async () => {
   ])
 })
 
+// Standard "return focus to the trigger" pattern for a dialog/sheet: the
+// element that opened it is whatever had focus right before -- normally the
+// header's "Abrir filtros" button. useDialogA11y already moves focus *into*
+// the sheet on open; closing it removes the sheet from the DOM, which would
+// otherwise silently drop focus to <body> (a real keyboard-nav regression,
+// separate from the scroll-jump bug this cycle also fixes).
+let filtersTriggerElement: HTMLElement | null = null
+
 function openFilters(): void {
+  filtersTriggerElement = document.activeElement as HTMLElement | null
   draftCategoryId.value = filters.value.categoryId
   draftInStockOnly.value = filters.value.inStockOnly ?? false
   isFiltersOpen.value = true
+}
+
+function restoreFocusToFiltersTrigger(): void {
+  filtersTriggerElement?.focus()
+  filtersTriggerElement = null
 }
 
 function toggleFilters(): void {
@@ -874,6 +889,7 @@ function handleSaveFilters(): void {
     inStockOnly: draftInStockOnly.value,
   })
   isFiltersOpen.value = false
+  restoreFocusToFiltersTrigger()
 }
 
 function handleCancelFilters(): void {
@@ -881,6 +897,7 @@ function handleCancelFilters(): void {
   draftCategoryId.value = filters.value.categoryId
   draftInStockOnly.value = filters.value.inStockOnly ?? false
   isFiltersOpen.value = false
+  restoreFocusToFiltersTrigger()
 }
 
 function handleClearFilters(): void {

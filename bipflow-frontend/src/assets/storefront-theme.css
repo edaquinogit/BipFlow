@@ -178,10 +178,14 @@
   outline-offset: 2px;
 }
 
-/* Selectable chip (category filter, and future facets). */
+/* Selectable chip (category filter, and future facets). Minimum touch
+   target is 44px (WCAG 2.5.5 / Ciclo 9 requirement) -- this used to be
+   2.25rem (36px) and silently won the cascade over the `min-h-11` utility
+   the category nav applied in its template, since a plain class selector
+   here has the same specificity and comes later in the stylesheet. */
 .storefront-chip {
   display: inline-flex;
-  min-height: 2.25rem;
+  min-height: 2.75rem;
   align-items: center;
   border-radius: 9999px;
   border: 1px solid var(--store-border);
