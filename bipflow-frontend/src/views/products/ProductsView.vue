@@ -537,7 +537,36 @@ const {
   getProductQuantity,
 } = useCart()
 
-let isSyncingRouteState = false
+// The URL query is a downstream projection of `filters` + `page` while this
+// view is mounted -- the component owns that state and pushes every change out
+// with `router.replace`. The URL is only read *back* into the filters on a
+// navigation the component did not itself initiate (a browser back/forward, or
+// a deep link opened while already on this page).
+//
+// `pendingRouteWrites` holds the serialized queries we have asked the router to
+// write and not yet seen echoed through the `route.query` watcher. It replaces
+// a single `isSyncingRouteState` boolean that was set synchronously and cleared
+// in an async `.finally`: with overlapping `router.replace` calls during fast
+// typing (each navigation also awaits an async `beforeEach` guard) that boolean
+// could be back down when an *earlier* replace's echo finally arrived, so the
+// route watcher adopted a stale query and overwrote text the user had since
+// typed -- intermittently firing the catalog request with a truncated search
+// term or none at all, and, when the echo cascaded into a fresh `router.replace`
+// mid-click, cancelling the navigation to the product being opened. Matching on
+// the exact query string is order-independent, so none of that can happen.
+const pendingRouteWrites = new Set<string>()
+
+function serializeQuery(query: LocationQuery | Record<string, string>): string {
+  const entries = Object.entries(query)
+    .map(([key, value]) => {
+      const normalized = Array.isArray(value) ? value[0] : value
+      return [key, normalized == null ? '' : String(normalized)] as const
+    })
+    .filter(([, value]) => value !== '')
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+
+  return JSON.stringify(entries)
+}
 
 const displayedProducts = computed(() => {
   const nextProducts = [...products.value]
@@ -624,17 +653,23 @@ function buildQueryFromState(): Record<string, string> {
 }
 
 function syncRouteQuery(): void {
-  const currentQuery = JSON.stringify(route.query)
-  const nextQuery = JSON.stringify(buildQueryFromState())
+  const nextQuery = buildQueryFromState()
+  const nextKey = serializeQuery(nextQuery)
 
-  if (currentQuery === nextQuery) {
+  if (serializeQuery(route.query) === nextKey) {
     return
   }
 
-  isSyncingRouteState = true
-  router.replace({ query: buildQueryFromState() }).finally(() => {
-    isSyncingRouteState = false
-  })
+  pendingRouteWrites.add(nextKey)
+  router
+    .replace({ query: nextQuery })
+    .catch(() => {
+      // A newer navigation (e.g. opening a product) supersedes this replace --
+      // expected during fast interaction, not an error worth surfacing.
+    })
+    .finally(() => {
+      pendingRouteWrites.delete(nextKey)
+    })
 }
 
 async function loadCategories(): Promise<void> {
@@ -732,24 +767,34 @@ watch(
     page.value,
   ],
   () => {
-    if (!isSyncingRouteState) {
-      syncRouteQuery()
-    }
+    syncRouteQuery()
   }
 )
 
 watch(
   () => route.query,
   (query) => {
-    if (isSyncingRouteState) {
+    const incomingKey = serializeQuery(query)
+
+    // Our own write coming back around: the filters already reflect this query
+    // (or a newer edit that flushes on its own). Consume the marker, stop.
+    if (pendingRouteWrites.has(incomingKey)) {
+      pendingRouteWrites.delete(incomingKey)
       return
     }
 
+    // URL already matches the live state -- a redundant re-emit, or a write
+    // that outran its marker being cleared. Nothing to adopt.
+    if (serializeQuery(buildQueryFromState()) === incomingKey) {
+      return
+    }
+
+    // Genuine external navigation (back/forward, or a deep link opened while
+    // already on this page): the URL is now the source of truth.
     const nextFilters = parseFiltersFromQuery(query)
     const nextPageValue = parsePageFromQuery(query)
-    const filtersChanged = JSON.stringify(filters.value) !== JSON.stringify(nextFilters)
 
-    if (filtersChanged) {
+    if (JSON.stringify(filters.value) !== JSON.stringify(nextFilters)) {
       updateFilters(nextFilters)
       return
     }
