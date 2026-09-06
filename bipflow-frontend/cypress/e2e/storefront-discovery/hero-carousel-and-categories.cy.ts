@@ -4,11 +4,10 @@
  * never a grid) and the always-visible category nav -- against the real
  * backend, real store "default".
  *
- * The dev DB already carries at least one hero banner (migrated from the
- * legacy single-image field) and several promotion banners from earlier
- * manual QA; this spec only *adds* a second hero banner (for the multi-slide
- * assertions) and deletes exactly what it created in `after()`, leaving
- * everything else untouched.
+ * `seed_e2e_demo_data` provisions the baseline (two hero banners, three
+ * promotion banners); this spec only *adds* one more hero banner so the
+ * multi-slide assertions have a slide they can uniquely identify, and
+ * deletes exactly what it created in `after()`, leaving the seed untouched.
  */
 
 const apiBaseUrl = () =>
@@ -30,7 +29,9 @@ describe('Storefront discovery: hero carousel, promotions rail, category nav', (
         headers: authHeaders(),
         body: {
           placement: 'hero',
-          image_url: 'https://via.placeholder.com/1600x600.png?text=Hero+E2E',
+          // Same-origin static asset shipped with the frontend -- loads
+          // instantly in CI, no external host to depend on.
+          image_url: `${Cypress.config('baseUrl')}/brand/bipflow-og.png`,
           alt_text: 'Banner hero de teste E2E',
           title: 'Hero E2E',
           is_active: true,

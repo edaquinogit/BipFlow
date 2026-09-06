@@ -28,6 +28,36 @@ function expectNoHorizontalOverflow(label: string): void {
   })
 }
 
+/**
+ * Block until the detail page has stopped moving: every <img> currently in
+ * the document has finished loading (or errored), and the document height is
+ * unchanged across two animation frames. Only then is a scroll baseline
+ * meaningful -- otherwise a late-loading image above the fold shrinks the
+ * page after the baseline is sampled and the browser clamps scrollY, which
+ * on a cold 360px run reads as a phantom "scroll jumped" on the next tap.
+ */
+function waitForSettledLayout(label: string): void {
+  cy.window({ timeout: 15000 }).should((win) => {
+    const imgs = Array.from(win.document.images)
+    const pending = imgs.filter((img) => !img.complete)
+    expect(pending.length, `${label}: all images decoded`).to.equal(0)
+  })
+  cy.document().then((doc) =>
+    new Cypress.Promise<void>((resolve) => {
+      const first = doc.documentElement.scrollHeight
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          expect(
+            doc.documentElement.scrollHeight,
+            `${label}: document height stable`,
+          ).to.equal(first)
+          resolve()
+        }),
+      )
+    }),
+  )
+}
+
 describe('Variant images: mobile validation of the storefront selector (real backend)', () => {
   // Two separate `before()` hooks, not one: Mocha runs each to full
   // completion before the next one's body even starts executing, which is
@@ -139,13 +169,14 @@ describe('Variant images: mobile validation of the storefront selector (real bac
       // *application* does from what Cypress's actionability check would
       // otherwise do on its own (the same technique the category-nav
       // scroll-jump fix relies on).
-      cy.get('[aria-label="Selecionar cor Preto Mobile"]').scrollIntoView()
-      // Let the just-scrolled-to position, and the still-selected variant's
-      // hero image, fully settle before sampling a baseline -- otherwise the
-      // "before" reading can itself land mid-reflow.
       heroImage().should(($img) => {
         expect(($img[0] as HTMLImageElement).naturalWidth).to.be.greaterThan(0)
       })
+      // Wait for the whole detail page to stop moving BEFORE scrolling to the
+      // chip and sampling a baseline -- a mid-reflow baseline is what made
+      // this flaky on the first (cold-cache) viewport.
+      waitForSettledLayout(`${label} detail settle`)
+      cy.get('[aria-label="Selecionar cor Preto Mobile"]').scrollIntoView()
       cy.window().its('scrollY').then((beforeY) => {
         cy.get('[aria-label="Selecionar cor Preto Mobile"]')
           .trigger('touchstart', { scrollBehavior: false, force: true })

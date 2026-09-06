@@ -27,6 +27,43 @@
 
 const SCROLL_TOLERANCE_PX = 15
 
+/**
+ * Visit the storefront with `prefers-reduced-motion: reduce` forced on (all
+ * other media queries pass through to the real browser, so desktop vs mobile
+ * layout is unaffected).
+ *
+ * This spec measures scroll position across a category change. The hero and
+ * promotions carousels above the product grid auto-advance every ~6s, and a
+ * slide change toggles the hero's variable-height caption block, moving
+ * everything below it -- noise that has nothing to do with the routing-layer
+ * regression under test. Reduced motion (a real, supported mode:
+ * useCarouselAutoplay never starts its timer when it is set) freezes the
+ * carousels so the only thing that can move the page is the category change
+ * itself.
+ */
+function visitStorefront(path = '/l/default/produtos'): void {
+  cy.visit(path, {
+    onBeforeLoad(win) {
+      const realMatchMedia = win.matchMedia.bind(win)
+      cy.stub(win, 'matchMedia').callsFake((query: string) => {
+        if (query.includes('prefers-reduced-motion')) {
+          return {
+            matches: true,
+            media: query,
+            onchange: null,
+            addEventListener: () => {},
+            removeEventListener: () => {},
+            addListener: () => {},
+            removeListener: () => {},
+            dispatchEvent: () => false,
+          } as unknown as MediaQueryList
+        }
+        return realMatchMedia(query)
+      })
+    },
+  })
+}
+
 function scrollToProductsGrid(): void {
   cy.get('[data-cy="storefront-empty-state"], .storefront-product-grid', { timeout: 15000 })
     .first()
@@ -55,7 +92,7 @@ describe('Mobile: category change preserves scroll position (priority)', () => {
   for (const [width, height, label] of viewports) {
     it(`[${label}] preserves scroll through the visible category chips and the filters sheet`, () => {
       cy.viewport(width, height)
-      cy.visit('/l/default/produtos')
+      visitStorefront()
 
       cy.get('[data-cy="storefront-category-nav"]', { timeout: 15000 }).should('exist')
       expectNoHorizontalOverflow(`${label} initial load`)
@@ -152,7 +189,7 @@ describe('Mobile: category change preserves scroll position (priority)', () => {
 
   it('centers the active chip using only horizontal scroll, never the window, on a narrow viewport', () => {
     cy.viewport(360, 800)
-    cy.visit('/l/default/produtos')
+    visitStorefront()
     cy.get('[data-cy="storefront-category-nav"]', { timeout: 15000 }).should('exist')
 
     cy.window().its('scrollY').then((beforeY) => {
@@ -178,7 +215,7 @@ describe('Desktop: category scroll preservation and router-level distinctions', 
   })
 
   it('preserves scroll when selecting a category, and when returning to "Todos"', () => {
-    cy.visit('/l/default/produtos')
+    visitStorefront()
     cy.get('[data-cy="storefront-category-nav"]', { timeout: 15000 }).should('exist')
 
     scrollToProductsGrid()
@@ -213,7 +250,7 @@ describe('Desktop: category scroll preservation and router-level distinctions', 
       body: { count: 0, next: null, previous: null, page_size: 12, total_pages: 0, results: [] },
     }).as('emptyCatalog')
 
-    cy.visit('/l/default/produtos')
+    visitStorefront()
     cy.get('[data-cy="storefront-category-nav"]', { timeout: 15000 }).should('exist')
     scrollToProductsGrid()
 
@@ -233,7 +270,7 @@ describe('Desktop: category scroll preservation and router-level distinctions', 
   })
 
   it('reloading a category URL loads normally (scroll starts at the top, which is expected for a fresh load)', () => {
-    cy.visit('/l/default/produtos?category=1')
+    visitStorefront('/l/default/produtos?category=1')
     cy.get('[data-cy="storefront-category-nav"]', { timeout: 15000 }).should('exist')
     cy.window().its('scrollY').should('eq', 0)
     // Whichever chip corresponds to category id 1 (nav order is alphabetical
@@ -245,7 +282,7 @@ describe('Desktop: category scroll preservation and router-level distinctions', 
   })
 
   it('back/forward between two categories restores the browser-remembered scroll position', () => {
-    cy.visit('/l/default/produtos')
+    visitStorefront()
     cy.get('[data-cy="storefront-category-nav"]', { timeout: 15000 }).should('exist')
 
     cy.get('[data-cy="storefront-category-nav"] [data-cy="storefront-category-chip"]')
@@ -271,7 +308,7 @@ describe('Desktop: category scroll preservation and router-level distinctions', 
   })
 
   it('a real navigation to another page still starts at the top', () => {
-    cy.visit('/l/default/produtos')
+    visitStorefront()
     cy.get('[data-cy="storefront-category-nav"]', { timeout: 15000 }).should('exist')
     scrollToProductsGrid()
     cy.window().its('scrollY').should('be.greaterThan', 50)
