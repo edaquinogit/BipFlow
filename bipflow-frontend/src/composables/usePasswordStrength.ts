@@ -15,12 +15,11 @@ const STRENGTH_LABELS: Record<PasswordStrengthLevel, string> = {
   strong: 'Forte',
 }
 
-// bip-rose doubles as this app's destructive/error color (never red-*, per
-// the dashboard's established semantic palette), so reusing it for "weak"
-// stays consistent with how the rest of the app signals "not good enough".
+// Password feedback follows the semantic state palette. Brand accents stay
+// reserved for identity and focus, so a weak password reads unambiguously.
 const STRENGTH_BAR_CLASSES: Record<PasswordStrengthLevel, string> = {
   empty: 'bg-zinc-200',
-  weak: 'bg-bip-rose',
+  weak: 'bg-danger',
   fair: 'bg-amber-400',
   good: 'bg-emerald-400',
   strong: 'bg-emerald-600',
