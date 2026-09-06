@@ -1,0 +1,26 @@
+# Cloudflare Pages headers. Applied on top of the static file server; SPA
+# fallback (index.html for unknown routes) stays handled by the Pages project
+# settings, unchanged by this file.
+
+# Login pages: readable by social crawlers for link previews, but not indexed
+# by search engines. `follow` keeps outbound link equity. This does NOT stop
+# LinkedIn/Facebook/X from reading Open Graph — they ignore noindex for cards.
+/login
+  X-Robots-Tag: noindex, follow
+/entrar
+  X-Robots-Tag: noindex, follow
+
+/brand/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+  X-Content-Type-Options: nosniff
+
+/site.webmanifest
+  Content-Type: application/manifest+json; charset=utf-8
+  Cache-Control: public, max-age=3600
+
+/robots.txt
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=3600
+
+/favicon.ico
+  Cache-Control: public, max-age=86400

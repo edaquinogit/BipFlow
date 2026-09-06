@@ -1,0 +1,28 @@
+# BipFlow Manage — https://bipflow-manage.pages.dev
+# The landing page, the admin login (/login), the storefront login (/entrar)
+# and every storefront (vitrine) are crawlable so social crawlers (LinkedIn,
+# Facebook, X…) can read their Open Graph tags. /login and /entrar additionally
+# carry `X-Robots-Tag: noindex, follow` (see public/_headers): readable for link
+# previews, kept out of search results. The admin panel and customer-account
+# areas stay disallowed. robots.txt is not a security control — every private
+# route is protected by authentication regardless of what this file says.
+
+User-agent: *
+Allow: /$
+Allow: /login
+Allow: /entrar
+Allow: /l/
+Allow: /s/
+Allow: /brand/
+Disallow: /dashboard
+Disallow: /register
+Disallow: /conta
+Disallow: /perfil
+Disallow: /status
+Disallow: /403
+Disallow: /500
+Disallow: /*/login
+Disallow: /*/conta
+Disallow: /*/perfil
+
+Sitemap: https://bipflow-manage.pages.dev/sitemap.xml

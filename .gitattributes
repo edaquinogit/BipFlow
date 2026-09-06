@@ -3,3 +3,9 @@ Dockerfile text eol=lf
 docker/*.Dockerfile text eol=lf
 docker/*.conf text eol=lf
 docker-compose.yml text eol=lf
+
+# Cloudflare Pages control files + crawler files must be LF
+bipflow-frontend/public/_headers text eol=lf
+bipflow-frontend/public/_redirects text eol=lf
+bipflow-frontend/public/robots.txt text eol=lf
+*.webmanifest text eol=lf
