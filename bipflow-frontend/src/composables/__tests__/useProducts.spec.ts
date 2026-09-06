@@ -495,6 +495,38 @@ describe("useProducts Composable", () => {
     });
   });
 
+  describe("clearable free-text payload handling", () => {
+    /**
+     * Regression: an emptied description/size must reach the backend as ''
+     * so a partial update actually clears it. Dropping the key (the default
+     * for every other empty field) left the stale value in place -- the
+     * "I cleared it, saved, and it came back on reload" bug.
+     */
+    it("sends an explicit empty string when the description is cleared", async () => {
+      const { updateProduct } = createComposable();
+      const serviceSpy = vi.spyOn(ProductService, "update").mockResolvedValue({ id: 7 } as any);
+
+      await updateProduct(7, { name: "Produto", description: "", size: "" } as any);
+
+      const sentPayload = serviceSpy.mock.calls[0]?.[1] as FormData;
+      expect(sentPayload.has("description")).toBe(true);
+      expect(sentPayload.get("description")).toBe("");
+      expect(sentPayload.has("size")).toBe(true);
+      expect(sentPayload.get("size")).toBe("");
+    });
+
+    it("still sends a non-empty description/size unchanged", async () => {
+      const { updateProduct } = createComposable();
+      const serviceSpy = vi.spyOn(ProductService, "update").mockResolvedValue({ id: 8 } as any);
+
+      await updateProduct(8, { name: "Produto", description: "Nova desc", size: "GG" } as any);
+
+      const sentPayload = serviceSpy.mock.calls[0]?.[1] as FormData;
+      expect(sentPayload.get("description")).toBe("Nova desc");
+      expect(sentPayload.get("size")).toBe("GG");
+    });
+  });
+
   describe("Bulk Selection Actions", () => {
     const productA = { id: 1, name: "Product A", price: 10, stock_quantity: 5 } as any;
     const productB = { id: 2, name: "Product B", price: 20, stock_quantity: 3 } as any;

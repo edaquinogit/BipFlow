@@ -98,6 +98,16 @@ export function useProducts() {
         return;
       }
 
+      // Free-text fields the edit form binds directly. Everywhere else an
+      // empty value means "leave this field untouched" (partial update), but
+      // for these an empty input is a deliberate "clear it" -- dropping it
+      // here is why a wiped description/size silently reverted on reload.
+      // The backend already accepts '' for both (TextField/CharField blank).
+      if (key === "description" || key === "size") {
+        formData.append(key, value === null || value === undefined ? "" : String(value));
+        return;
+      }
+
       if (value === null || value === undefined || value === "") return;
 
       if (key === "variants" && Array.isArray(value)) {
