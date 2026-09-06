@@ -1,5 +1,7 @@
 import api from './api'
 import type {
+  MerchantProfile,
+  MerchantProfilePayload,
   Store,
   StoreAppearanceSettingsPayload,
   StoreLabelSettings,
@@ -10,6 +12,21 @@ import type {
 export const storeService = {
   async getCurrent(): Promise<Store> {
     const response = await api.get<Store>('v1/store/current/')
+    return response.data
+  },
+
+  /** Fetch the active store's merchant profile (COMMERCE P1). */
+  async getMerchantProfile(): Promise<MerchantProfile> {
+    const response = await api.get<MerchantProfile>('v1/store/current/merchant-profile/')
+    return response.data
+  },
+
+  /** Partially update the active store's merchant profile. Omitted fields are preserved. */
+  async updateMerchantProfile(payload: MerchantProfilePayload): Promise<MerchantProfile> {
+    const response = await api.patch<MerchantProfile>(
+      'v1/store/current/merchant-profile/',
+      payload
+    )
     return response.data
   },
 

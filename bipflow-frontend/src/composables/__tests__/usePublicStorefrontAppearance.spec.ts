@@ -54,6 +54,16 @@ function buildAppearance(overrides: Partial<PublicStorefrontAppearance> = {}): P
     motion_intensity: 'standard',
     decoration_enabled: false,
     decoration_style: 'none',
+    merchant: {
+      trade_name: '',
+      city: '',
+      state: '',
+      website_url: '',
+      instagram_url: '',
+      facebook_url: '',
+      tiktok_url: '',
+      youtube_url: '',
+    },
     ...overrides,
   }
 }

@@ -414,7 +414,8 @@
         />
       </div>
 
-      <footer class="mt-10 border-t border-[#E5E7EB] py-6 text-center">
+      <footer class="mt-10 space-y-4 border-t border-[#E5E7EB] py-6 text-center">
+        <StorefrontSocialLinks :merchant="storefrontAppearance?.merchant" />
         <FeedbackTrigger />
       </footer>
     </main>

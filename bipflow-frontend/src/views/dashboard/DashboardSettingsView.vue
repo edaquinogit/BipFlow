@@ -2,6 +2,7 @@
 import { computed, ref, type Component } from 'vue';
 import {
   BuildingStorefrontIcon,
+  IdentificationIcon,
   PaintBrushIcon,
   PhoneIcon,
   PrinterIcon,
@@ -11,15 +12,25 @@ import {
 } from '@heroicons/vue/24/outline';
 import CategoriesTab from '@/components/dashboard/settings/CategoriesTab.vue';
 import DeliveryRegionsTab from '@/components/dashboard/settings/DeliveryRegionsTab.vue';
+import MerchantProfileTab from '@/components/dashboard/settings/MerchantProfileTab.vue';
 import ReceiptSettingsTab from '@/components/dashboard/settings/ReceiptSettingsTab.vue';
 import SecurityTab from '@/components/dashboard/settings/SecurityTab.vue';
 import StorefrontAppearanceTab from '@/components/dashboard/settings/StorefrontAppearanceTab.vue';
 import StoresTab from '@/components/dashboard/settings/StoresTab.vue';
 import WhatsappTab from '@/components/dashboard/settings/WhatsappTab.vue';
 
-type SettingsTab = 'categorias' | 'frete' | 'whatsapp' | 'lojas' | 'recibo' | 'seguranca' | 'aparencia';
+type SettingsTab =
+  | 'perfil'
+  | 'categorias'
+  | 'frete'
+  | 'whatsapp'
+  | 'lojas'
+  | 'recibo'
+  | 'seguranca'
+  | 'aparencia';
 
 const TABS: { value: SettingsTab; label: string; icon: typeof TagIcon; component: Component }[] = [
+  { value: 'perfil', label: 'Perfil da loja', icon: IdentificationIcon, component: MerchantProfileTab },
   { value: 'categorias', label: 'Categorias', icon: TagIcon, component: CategoriesTab },
   { value: 'aparencia', label: 'Aparencia da vitrine', icon: PaintBrushIcon, component: StorefrontAppearanceTab },
   { value: 'frete', label: 'Frete', icon: TruckIcon, component: DeliveryRegionsTab },
@@ -29,7 +40,7 @@ const TABS: { value: SettingsTab; label: string; icon: typeof TagIcon; component
   { value: 'seguranca', label: 'Seguranca', icon: ShieldCheckIcon, component: SecurityTab },
 ];
 
-const activeTab = ref<SettingsTab>('categorias');
+const activeTab = ref<SettingsTab>('perfil');
 const activeTabComponent = computed(() => (
   TABS.find((tab) => tab.value === activeTab.value)?.component
 ));

@@ -1,4 +1,6 @@
+from django import forms
 from django.contrib import admin
+from django.core.exceptions import PermissionDenied
 
 from . import admin_auth  # noqa: F401  -- installs the MFA-gated admin login form
 from .models import (
@@ -10,6 +12,7 @@ from .models import (
     DeliveryRegion,
     LabelSettings,
     LoginAttempt,
+    MerchantProfile,
     MFABackupCode,
     Product,
     ProductVariant,
@@ -38,16 +41,56 @@ class StoreScopedAdminMixin:
             return queryset
         return queryset.filter(store__memberships__user=request.user).distinct()
 
-    def save_model(self, request, obj, form, change):
-        if not change and not obj.store_id and not request.user.is_superuser:
-            membership = (
-                StoreMembership.objects.filter(user=request.user)
-                .select_related("store")
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "store" and not request.user.is_superuser:
+            queryset = kwargs.get("queryset") or Store.objects.all()
+            kwargs["queryset"] = queryset.filter(
+                memberships__user=request.user
+            ).distinct()
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def _assign_default_store_for_staff(self, request, obj) -> None:
+        if obj.store_id or request.user.is_superuser:
+            return
+
+        membership = (
+            StoreMembership.objects.filter(user=request.user)
+            .select_related("store")
+            .order_by("store_id", "id")
+            .first()
+        )
+        if membership is not None:
+            obj.store = membership.store
+
+    def _validate_store_membership_for_save(self, request, obj, change) -> None:
+        if request.user.is_superuser:
+            return
+
+        if not obj.store_id:
+            raise PermissionDenied("Voce nao possui acesso a esta loja.")
+
+        membership_store_ids = set(
+            StoreMembership.objects.filter(user=request.user).values_list(
+                "store_id", flat=True
+            )
+        )
+        if change and obj.pk:
+            original_store_id = (
+                obj.__class__._default_manager.filter(pk=obj.pk)
+                .values_list("store_id", flat=True)
                 .first()
             )
-            if membership is not None:
-                obj.store = membership.store
+            if original_store_id not in membership_store_ids:
+                raise PermissionDenied("Voce nao possui acesso a esta loja.")
 
+        if not StoreMembership.objects.filter(
+            user=request.user, store_id=obj.store_id
+        ).exists():
+            raise PermissionDenied("Voce nao possui acesso a esta loja.")
+
+    def save_model(self, request, obj, form, change):
+        self._assign_default_store_for_staff(request, obj)
+        self._validate_store_membership_for_save(request, obj, change)
         super().save_model(request, obj, form, change)
 
 
@@ -138,6 +181,27 @@ class LabelSettingsAdmin(StoreScopedAdminMixin, admin.ModelAdmin):
         "updated_at",
     )
     list_filter = ("page_format", "store")
+    readonly_fields = ("created_at", "updated_at")
+
+
+class MerchantProfileAdminForm(forms.ModelForm):
+    """Admin form that accepts common masks before model-level normalization."""
+
+    tax_id = forms.CharField(required=False, max_length=32)
+    contact_phone = forms.CharField(required=False, max_length=32)
+    postal_code = forms.CharField(required=False, max_length=16)
+
+    class Meta:
+        model = MerchantProfile
+        fields = "__all__"
+
+
+@admin.register(MerchantProfile)
+class MerchantProfileAdmin(StoreScopedAdminMixin, admin.ModelAdmin):
+    form = MerchantProfileAdminForm
+    list_display = ("id", "store", "trade_name", "city", "state", "updated_at")
+    list_filter = ("state", "country")
+    search_fields = ("store__name", "legal_name", "trade_name", "tax_id")
     readonly_fields = ("created_at", "updated_at")
 
 

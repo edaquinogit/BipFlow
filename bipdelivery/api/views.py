@@ -58,6 +58,7 @@ from .models import (
     DeliveryRegion,
     LabelSettings,
     LoginAttempt,
+    MerchantProfile,
     MFABackupCode,
     Product,
     ProductVariant,
@@ -101,6 +102,7 @@ from .serializers import (
     CustomerProfileSerializer,
     DeliveryRegionSerializer,
     LabelSettingsSerializer,
+    MerchantProfileSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     ProductSerializer,
@@ -1822,6 +1824,52 @@ def can_edit_storefront_dashboard_store(request, store: Store) -> bool:
         user=user,
         role__in=(StoreMembership.ROLE_OWNER, StoreMembership.ROLE_MANAGER),
     ).exists()
+
+
+class MerchantProfileView(APIView):
+    """Read/update the active store's merchant profile (COMMERCE P1).
+
+    Commercial identity, contact, address and social links. The tenant is
+    resolved from the authenticated store context via
+    resolve_request_store() (trusted JWT claim / X-Store-Slug header, never a
+    client-supplied id), then the same membership gate the storefront
+    appearance endpoints use: any member may read, owner/manager (or staff)
+    may edit. PATCH is partial -- omitted fields keep their stored value.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        store = resolve_request_store(request)
+        if not can_read_storefront_dashboard_store(request, store):
+            return permission_denied_error(
+                "Voce nao possui permissao para acessar o perfil desta loja."
+            )
+
+        profile = MerchantProfile.get_for_store(store)
+        return Response(
+            MerchantProfileSerializer(profile).data, status=status.HTTP_200_OK
+        )
+
+    def patch(self, request, *args, **kwargs):
+        store = resolve_request_store(request)
+        if not can_read_storefront_dashboard_store(request, store):
+            return permission_denied_error(
+                "Voce nao possui permissao para acessar o perfil desta loja."
+            )
+
+        if not can_edit_storefront_dashboard_store(request, store):
+            return permission_denied_error(
+                "Voce nao possui permissao para editar o perfil desta loja."
+            )
+
+        profile = MerchantProfile.get_for_store(store)
+        serializer = MerchantProfileSerializer(
+            profile, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class StorefrontAppearanceView(APIView):

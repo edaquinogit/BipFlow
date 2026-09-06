@@ -38,6 +38,56 @@ export interface StoreAppearanceSettingsPayload {
   theme?: StoreTheme
 }
 
+/** COMMERCE P1 -- Merchant Profile: commercial identity, contact, address, links. */
+export type BrazilianUf =
+  | 'AC' | 'AL' | 'AP' | 'AM' | 'BA' | 'CE' | 'DF' | 'ES' | 'GO'
+  | 'MA' | 'MT' | 'MS' | 'MG' | 'PA' | 'PB' | 'PR' | 'PE' | 'PI'
+  | 'RJ' | 'RN' | 'RS' | 'RO' | 'RR' | 'SC' | 'SP' | 'SE' | 'TO'
+
+export interface MerchantProfile {
+  legal_name: string
+  trade_name: string
+  tax_id: string
+  contact_email: string
+  contact_phone: string
+  postal_code: string
+  street: string
+  number: string
+  complement: string
+  district: string
+  city: string
+  state: BrazilianUf | ''
+  country: string
+  website_url: string
+  instagram_url: string
+  facebook_url: string
+  tiktok_url: string
+  youtube_url: string
+  is_complete: boolean
+  has_complete_address: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type MerchantProfilePayload = Partial<
+  Omit<
+    MerchantProfile,
+    'is_complete' | 'has_complete_address' | 'created_at' | 'updated_at'
+  >
+>
+
+/** Storefront-safe subset echoed by the public storefront appearance endpoint. */
+export interface PublicMerchantProfile {
+  trade_name: string
+  city: string
+  state: BrazilianUf | ''
+  website_url: string
+  instagram_url: string
+  facebook_url: string
+  tiktok_url: string
+  youtube_url: string
+}
+
 export type CardStyle = 'clean' | 'bordered' | 'elevated'
 export type RadiusStyle = 'minimal' | 'rounded' | 'soft'
 export type LayoutDensity = 'compact' | 'comfortable'
@@ -90,6 +140,7 @@ export type PublicStorefrontAppearance = Omit<StorefrontAppearance, 'id' | 'stor
   logo_url: string
   tagline: string
   theme: StoreTheme
+  merchant: PublicMerchantProfile
 }
 
 export interface StorefrontBanner {

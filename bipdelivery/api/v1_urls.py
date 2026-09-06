@@ -12,6 +12,7 @@ from .views import (
     CustomerFeedbackViewSet,
     CustomerProfileView,
     DeliveryRegionViewSet,
+    MerchantProfileView,
     MyStoreDetailView,
     MyStoresView,
     ProductViewSet,
@@ -55,6 +56,11 @@ urlpatterns = [
         name="pdv-sale-receipt-email",
     ),
     path("store/current/", CurrentStoreView.as_view(), name="store-current"),
+    path(
+        "store/current/merchant-profile/",
+        MerchantProfileView.as_view(),
+        name="store-current-merchant-profile",
+    ),
     path(
         "store/current/appearance/",
         StoreAppearanceSettingsView.as_view(),

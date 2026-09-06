@@ -23,10 +23,16 @@ from .models import (
     BotConversation,
     BotMessage,
     Category,
+    clean_merchant_contact_phone,
+    clean_merchant_country,
+    clean_merchant_postal_code,
+    clean_merchant_public_url,
+    clean_merchant_tax_id,
     CustomerFeedback,
     CustomerProfile,
     DeliveryRegion,
     LabelSettings,
+    MerchantProfile,
     Product,
     ProductGalleryImage,
     ProductVariant,
@@ -1914,6 +1920,7 @@ class PublicStorefrontAppearanceSerializer(serializers.ModelSerializer):
     logo_url = serializers.CharField(source="store.logo_url", read_only=True)
     tagline = serializers.CharField(source="store.tagline", read_only=True)
     theme = serializers.SerializerMethodField()
+    merchant = serializers.SerializerMethodField()
 
     class Meta:
         model = StorefrontAppearance
@@ -1923,6 +1930,7 @@ class PublicStorefrontAppearanceSerializer(serializers.ModelSerializer):
             "logo_url",
             "tagline",
             "theme",
+            "merchant",
             "secondary_color",
             "favicon_url",
             "hero_enabled",
@@ -1951,6 +1959,13 @@ class PublicStorefrontAppearanceSerializer(serializers.ModelSerializer):
 
     def get_store_name(self, appearance: StorefrontAppearance) -> str:
         return appearance.store.display_name.strip() or appearance.store.name
+
+    def get_merchant(self, appearance: StorefrontAppearance) -> dict:
+        """Storefront-safe merchant fields only (PUBLIC_FIELDS). A read never
+        creates the row -- an unsaved instance keeps the payload shape stable
+        for a store that has not filled its profile yet."""
+        profile = MerchantProfile.objects.filter(store=appearance.store).first()
+        return dict(PublicMerchantProfileSerializer(profile or MerchantProfile()).data)
 
 
 class StoreRenameSerializer(serializers.Serializer):
@@ -2038,6 +2053,138 @@ class StoreSettingsSerializer(PublicStoreSettingsSerializer):
             )
 
         return phone_digits
+
+
+def _as_serializer_validation_error(error: DjangoValidationError) -> None:
+    messages = getattr(error, "messages", None)
+    if messages and len(messages) == 1:
+        raise serializers.ValidationError(messages[0]) from error
+    raise serializers.ValidationError(messages or str(error)) from error
+
+
+class MerchantProfileSerializer(serializers.ModelSerializer):
+    """Read/write the resolved store's commercial identity, contact, address
+    and social links (COMMERCE P1).
+
+    Explicit field list (never ``__all__``): ``store``/``id`` are deliberately
+    not exposed, so a client can neither read the tenant linkage nor attempt
+    to reassign it -- the view owns the instance, resolved from the
+    authenticated store context. PATCH is partial: an omitted field keeps its
+    stored value; an empty string is an explicit "clear this field".
+    """
+
+    is_complete = serializers.BooleanField(read_only=True)
+    has_complete_address = serializers.BooleanField(read_only=True)
+    # choices already reject unknown UFs; allow_blank keeps "" (not set) valid.
+    state = serializers.ChoiceField(
+        choices=MerchantProfile.UF_CHOICES,
+        required=False,
+        allow_blank=True,
+    )
+    # Accept masked input ("11.222.333/0001-81", "40010-000", "(71) 3333-4444")
+    # and normalize to digits in validate_*; the wider max_length here keeps
+    # the model column's tighter limit from rejecting the mask before the
+    # field-level validator can strip it.
+    tax_id = serializers.CharField(
+        required=False, allow_blank=True, max_length=32, trim_whitespace=True
+    )
+    contact_phone = serializers.CharField(
+        required=False, allow_blank=True, max_length=32, trim_whitespace=True
+    )
+    postal_code = serializers.CharField(
+        required=False, allow_blank=True, max_length=16, trim_whitespace=True
+    )
+
+    class Meta:
+        model = MerchantProfile
+        fields = [
+            "legal_name",
+            "trade_name",
+            "tax_id",
+            "contact_email",
+            "contact_phone",
+            "postal_code",
+            "street",
+            "number",
+            "complement",
+            "district",
+            "city",
+            "state",
+            "country",
+            "website_url",
+            "instagram_url",
+            "facebook_url",
+            "tiktok_url",
+            "youtube_url",
+            "is_complete",
+            "has_complete_address",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "is_complete",
+            "has_complete_address",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate_tax_id(self, value: str) -> str:
+        try:
+            return clean_merchant_tax_id(value)
+        except DjangoValidationError as error:
+            _as_serializer_validation_error(error)
+
+    def validate_contact_phone(self, value: str) -> str:
+        try:
+            return clean_merchant_contact_phone(value)
+        except DjangoValidationError as error:
+            _as_serializer_validation_error(error)
+
+    def validate_postal_code(self, value: str) -> str:
+        try:
+            return clean_merchant_postal_code(value)
+        except DjangoValidationError as error:
+            _as_serializer_validation_error(error)
+
+    def validate_country(self, value: str) -> str:
+        try:
+            return clean_merchant_country(value)
+        except DjangoValidationError as error:
+            _as_serializer_validation_error(error)
+
+    def _validate_public_url(self, field_name: str, value: str) -> str:
+        try:
+            return clean_merchant_public_url(field_name, value)
+        except DjangoValidationError as error:
+            _as_serializer_validation_error(error)
+
+    def validate_website_url(self, value: str) -> str:
+        return self._validate_public_url("website_url", value)
+
+    def validate_instagram_url(self, value: str) -> str:
+        return self._validate_public_url("instagram_url", value)
+
+    def validate_facebook_url(self, value: str) -> str:
+        return self._validate_public_url("facebook_url", value)
+
+    def validate_tiktok_url(self, value: str) -> str:
+        return self._validate_public_url("tiktok_url", value)
+
+    def validate_youtube_url(self, value: str) -> str:
+        return self._validate_public_url("youtube_url", value)
+
+
+class PublicMerchantProfileSerializer(serializers.ModelSerializer):
+    """Storefront-safe subset of the merchant profile.
+
+    Only MerchantProfile.PUBLIC_FIELDS -- never legal_name, tax_id, contact
+    e-mail/phone, or the street-level address. Read-only.
+    """
+
+    class Meta:
+        model = MerchantProfile
+        fields = list(MerchantProfile.PUBLIC_FIELDS)
+        read_only_fields = fields
 
 
 class BotMessageRequestSerializer(serializers.Serializer):

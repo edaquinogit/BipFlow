@@ -113,4 +113,30 @@ describe('StoreService', () => {
     expect(api.get).toHaveBeenCalledWith('v1/store/mine/default/label-settings/')
     expect(api.patch).toHaveBeenCalledWith('v1/store/mine/default/label-settings/', { columns: 3 })
   })
+
+  it('fetches the merchant profile from the current-store endpoint', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({
+      data: { trade_name: 'Boutique X', is_complete: false },
+    } as never)
+
+    const response = await storeService.getMerchantProfile()
+
+    expect(api.get).toHaveBeenCalledWith('v1/store/current/merchant-profile/')
+    expect(response.trade_name).toBe('Boutique X')
+  })
+
+  it('PATCHes the merchant profile with only the provided fields', async () => {
+    vi.mocked(api.patch).mockResolvedValueOnce({
+      data: { trade_name: 'Boutique X', instagram_url: 'https://instagram.com/x' },
+    } as never)
+
+    const response = await storeService.updateMerchantProfile({
+      instagram_url: 'https://instagram.com/x',
+    })
+
+    expect(api.patch).toHaveBeenCalledWith('v1/store/current/merchant-profile/', {
+      instagram_url: 'https://instagram.com/x',
+    })
+    expect(response.instagram_url).toBe('https://instagram.com/x')
+  })
 })
