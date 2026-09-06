@@ -126,98 +126,19 @@
     <main
       class="mx-auto max-w-7xl px-4 py-6 pb-24 sm:px-6 lg:px-8"
       :aria-busy="isLoading ? 'true' : 'false'"
+      style="overflow-anchor: none"
     >
       <p class="sr-only" aria-live="polite">{{ liveRegionMessage }}</p>
 
-      <section
-        v-if="heroAppearance"
-        data-cy="storefront-hero-banner"
-        class="mb-5 overflow-hidden rounded-[var(--store-radius-lg)] border border-[var(--store-border)] bg-[var(--store-surface)] sm:mb-6"
-      >
-        <picture>
-          <source
-            v-if="heroAppearance.hero_image_mobile"
-            :srcset="heroAppearance.hero_image_mobile"
-            media="(max-width: 640px)"
-          />
-          <img
-            :src="heroAppearance.hero_image_desktop"
-            :alt="heroAppearance.hero_alt_text || storeBranding.name"
-            class="aspect-[16/7] w-full object-cover"
-            loading="eager"
-          />
-        </picture>
+      <HeroCarousel :banners="heroBanners" :store-name="storeBranding.name" />
 
-        <div
-          v-if="heroAppearance.hero_title || heroAppearance.hero_subtitle || (heroAppearance.hero_cta_text && heroAppearance.hero_cta_url)"
-          class="flex flex-col gap-3 border-t border-[var(--store-border)] px-4 py-4 min-[390px]:px-5 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <div class="min-w-0">
-            <h2
-              v-if="heroAppearance.hero_title"
-              class="text-lg font-semibold leading-tight text-[var(--store-text)] min-[390px]:text-xl"
-            >
-              {{ heroAppearance.hero_title }}
-            </h2>
-            <p
-              v-if="heroAppearance.hero_subtitle"
-              class="mt-1 text-sm leading-5 text-[var(--store-text-muted)]"
-            >
-              {{ heroAppearance.hero_subtitle }}
-            </p>
-          </div>
+      <PromotionsCarousel :promotions="promotionBanners" />
 
-          <a
-            v-if="heroAppearance.hero_cta_text && heroAppearance.hero_cta_url"
-            :href="heroAppearance.hero_cta_url"
-            target="_blank"
-            rel="noopener"
-            class="storefront-primary-button inline-flex h-11 shrink-0 items-center justify-center rounded-[var(--store-radius-md)] px-4 text-[0.8125rem] font-semibold uppercase tracking-wide focus:outline-none"
-          >
-            {{ heroAppearance.hero_cta_text }}
-          </a>
-        </div>
-      </section>
-
-      <section
-        v-if="storefrontBanners.length"
-        data-cy="storefront-promotional-banners"
-        class="mb-5 grid gap-3 min-[390px]:mb-6 md:grid-cols-2"
-      >
-        <component
-          :is="banner.button_url ? 'a' : 'div'"
-          v-for="banner in storefrontBanners"
-          :key="`${banner.position}-${banner.image_url}`"
-          :href="banner.button_url || undefined"
-          class="group overflow-hidden rounded-[var(--store-radius-lg)] border border-[var(--store-border)] bg-[var(--store-surface)] transition hover:border-[var(--store-brand-on-light)]"
-        >
-          <img
-            :src="banner.image_url"
-            :alt="banner.alt_text || banner.title || storeBranding.name"
-            class="aspect-[5/2] w-full object-cover"
-            loading="lazy"
-          />
-          <div
-            v-if="banner.title || banner.subtitle || (banner.cta_text && banner.button_url)"
-            class="flex flex-col gap-3 border-t border-[var(--store-border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-          >
-            <div class="min-w-0">
-              <h2 v-if="banner.title" class="text-sm font-semibold leading-tight text-[var(--store-text)]">
-                {{ banner.title }}
-              </h2>
-              <p v-if="banner.subtitle" class="mt-1 text-xs leading-5 text-[var(--store-text-muted)]">
-                {{ banner.subtitle }}
-              </p>
-            </div>
-            <span
-              v-if="banner.cta_text && banner.button_url"
-              class="storefront-primary-button inline-flex h-9 shrink-0 items-center justify-center rounded-[var(--store-radius-md)] px-3 text-[0.75rem] font-semibold uppercase tracking-wide"
-            >
-              {{ banner.cta_text }}
-            </span>
-          </div>
-        </component>
-      </section>
+      <CategoryNav
+        :categories="categories"
+        :active-category-id="filters.categoryId"
+        @select="handleCategorySelect"
+      />
 
       <div class="mb-4 flex items-center justify-between gap-3 text-[0.8125rem] text-[var(--store-text-muted)] sm:mb-5">
         <p>{{ showingRange }}</p>
@@ -289,21 +210,31 @@
 
       <div
         v-else
+        data-cy="storefront-empty-state"
         class="mx-auto max-w-sm py-16 text-center sm:py-20"
       >
-        <h2 class="text-base font-semibold text-[var(--store-text)]">Nenhum produto encontrado</h2>
+        <h2 class="text-base font-semibold text-[var(--store-text)]">{{ emptyStateTitle }}</h2>
         <p class="mx-auto mt-2 text-[0.8125rem] leading-6 text-[var(--store-text-muted)]">
-          {{ filters.search ? `Nada corresponde a "${filters.search}".` : 'Tente outra categoria ou remova os filtros.' }}
+          {{ emptyStateMessage }}
         </p>
-        <StorefrontButton
-          v-if="filters.search || filters.categoryId || filters.inStockOnly"
-          variant="outline"
-          class="mt-5"
-          aria-label="Limpar filtros"
-          @click="handleClearFilters"
-        >
-          Limpar filtros
-        </StorefrontButton>
+        <div class="mt-5 flex flex-wrap items-center justify-center gap-2.5">
+          <StorefrontButton
+            v-if="filters.categoryId"
+            variant="outline"
+            aria-label="Ver todos os produtos"
+            @click="handleViewAllProducts"
+          >
+            Ver todos os produtos
+          </StorefrontButton>
+          <StorefrontButton
+            v-if="filters.search || filters.categoryId || filters.inStockOnly"
+            variant="outline"
+            aria-label="Limpar filtros"
+            @click="handleClearFilters"
+          >
+            Limpar filtros
+          </StorefrontButton>
+        </div>
       </div>
 
       <div v-if="totalPages > 1" class="mt-8">
@@ -367,6 +298,9 @@ import CartDrawer from './CartDrawer.vue'
 import CustomerProfileMenuButton from './CustomerProfileMenuButton.vue'
 import FloatingCartButton from './FloatingCartButton.vue'
 import FeedbackTrigger from '@/components/feedback/FeedbackTrigger.vue'
+import CategoryNav from '@/components/storefront/CategoryNav.vue'
+import HeroCarousel from '@/components/storefront/HeroCarousel.vue'
+import PromotionsCarousel from '@/components/storefront/PromotionsCarousel.vue'
 import StorefrontButton from '@/components/storefront/StorefrontButton.vue'
 import StorefrontFooter from '@/components/storefront/StorefrontFooter.vue'
 import StorefrontHeader from '@/components/storefront/StorefrontHeader.vue'
@@ -587,6 +521,33 @@ const displayedProducts = computed(() => {
   }
 })
 
+const selectedCategoryName = computed(
+  () => categories.value.find((category) => category.id === filters.value.categoryId)?.name ?? null,
+)
+
+const emptyStateTitle = computed(() => {
+  if (filters.value.categoryId) {
+    return selectedCategoryName.value
+      ? `Nenhum produto em ${selectedCategoryName.value}`
+      : 'Nenhum produto nesta categoria'
+  }
+  return 'Nenhum produto encontrado'
+})
+
+const emptyStateMessage = computed(() => {
+  if (filters.value.search) {
+    return `Nada corresponde a "${filters.value.search}".`
+  }
+  if (filters.value.categoryId) {
+    return 'Ainda nao ha produtos visiveis nesta categoria.'
+  }
+  return 'Tente outra categoria ou remova os filtros.'
+})
+
+function handleViewAllProducts(): void {
+  updateFilters({ categoryId: undefined })
+}
+
 const isWhatsAppConfigured = computed(() => storeWhatsAppPhone.value.length > 0)
 const isCompactDensity = computed(() => storefrontAppearance.value?.density === 'compact')
 
@@ -596,15 +557,44 @@ const activeFilterCount = computed(
   () => (filters.value.categoryId ? 1 : 0) + (filters.value.inStockOnly ? 1 : 0),
 )
 
-const heroAppearance = computed(() => {
+// Ciclo 9: the hero carousel reads from the placement-scoped banner list.
+// A store that never touched the new multi-banner admin UI keeps working
+// through the legacy single hero_* image -- rendered as a one-slide
+// "carousel" (no controls/autoplay, same as any single hero banner) so nothing
+// a merchant already configured disappears. Once at least one hero-placement
+// banner exists, that list takes over entirely.
+const heroBannersFromApi = computed(() =>
+  storefrontBanners.value.filter((banner) => banner.placement === 'hero'),
+)
+const legacyHeroBanner = computed<PublicStorefrontBanner | null>(() => {
   const appearance = storefrontAppearance.value
-
   if (!appearance?.hero_enabled || !appearance.hero_image_desktop) {
     return null
   }
 
-  return appearance
+  return {
+    placement: 'hero',
+    image_url: appearance.hero_image_desktop,
+    image_url_mobile: appearance.hero_image_mobile,
+    alt_text: appearance.hero_alt_text,
+    title: appearance.hero_title,
+    subtitle: appearance.hero_subtitle,
+    cta_text: appearance.hero_cta_text,
+    button_url: appearance.hero_cta_url,
+    position: 0,
+    status: 'active',
+  }
 })
+const heroBanners = computed(() =>
+  heroBannersFromApi.value.length
+    ? heroBannersFromApi.value
+    : legacyHeroBanner.value
+      ? [legacyHeroBanner.value]
+      : [],
+)
+const promotionBanners = computed(() =>
+  storefrontBanners.value.filter((banner) => banner.placement === 'promotion'),
+)
 
 const liveRegionMessage = computed(() => {
   if (isInitialLoading.value) {
@@ -847,10 +837,24 @@ onMounted(async () => {
   ])
 })
 
+// Standard "return focus to the trigger" pattern for a dialog/sheet: the
+// element that opened it is whatever had focus right before -- normally the
+// header's "Abrir filtros" button. useDialogA11y already moves focus *into*
+// the sheet on open; closing it removes the sheet from the DOM, which would
+// otherwise silently drop focus to <body> (a real keyboard-nav regression,
+// separate from the scroll-jump bug this cycle also fixes).
+let filtersTriggerElement: HTMLElement | null = null
+
 function openFilters(): void {
+  filtersTriggerElement = document.activeElement as HTMLElement | null
   draftCategoryId.value = filters.value.categoryId
   draftInStockOnly.value = filters.value.inStockOnly ?? false
   isFiltersOpen.value = true
+}
+
+function restoreFocusToFiltersTrigger(): void {
+  filtersTriggerElement?.focus()
+  filtersTriggerElement = null
 }
 
 function toggleFilters(): void {
@@ -866,6 +870,14 @@ function handleQuickCategory(categoryId: number | undefined): void {
   draftCategoryId.value = categoryId
 }
 
+// The always-visible category bar (Ciclo 9) applies immediately, unlike the
+// filters sheet's staged draft/"Ver resultados" flow -- selecting a category
+// here is the whole action, so it writes straight to the live filter (which
+// is already what drives the URL query and re-fetch).
+function handleCategorySelect(categoryId: number | undefined): void {
+  updateFilters({ categoryId })
+}
+
 function handleStockFilterToggle(event: Event): void {
   const target = event.target as HTMLInputElement
   draftInStockOnly.value = target.checked
@@ -877,6 +889,7 @@ function handleSaveFilters(): void {
     inStockOnly: draftInStockOnly.value,
   })
   isFiltersOpen.value = false
+  restoreFocusToFiltersTrigger()
 }
 
 function handleCancelFilters(): void {
@@ -884,6 +897,7 @@ function handleCancelFilters(): void {
   draftCategoryId.value = filters.value.categoryId
   draftInStockOnly.value = filters.value.inStockOnly ?? false
   isFiltersOpen.value = false
+  restoreFocusToFiltersTrigger()
 }
 
 function handleClearFilters(): void {

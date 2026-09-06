@@ -5,6 +5,7 @@ import type {
   StorefrontAppearance,
   StorefrontBanner,
   StorefrontBannerPayload,
+  StorefrontBannerPlacement,
   StorefrontMediaKind,
   StorefrontMediaUploadResponse,
   StorefrontAppearancePayload,
@@ -23,7 +24,11 @@ export const storefrontAppearanceService = {
     return response.data
   },
 
-  /** Fetch public active promotional banners for a visitor-facing store slug. */
+  /**
+   * Fetch public active banners for a visitor-facing store slug -- both the
+   * hero carousel and the promotions rail, in one request (split by
+   * `placement` on the caller's side).
+   */
   async getPublicBanners(slug: string): Promise<PublicStorefrontBanner[]> {
     const response = await api.get<PublicStorefrontBanner[]>(`v1/public/stores/${slug}/banners/`)
     return response.data
@@ -38,9 +43,11 @@ export const storefrontAppearanceService = {
     return response.data
   },
 
-  /** List promotional banners for the active dashboard store. */
-  async listBanners(): Promise<StorefrontBanner[]> {
-    const response = await api.get<StorefrontBanner[]>('v1/store/current/storefront-banners/')
+  /** List banners for the active dashboard store, scoped to one placement. */
+  async listBanners(placement: StorefrontBannerPlacement = 'promotion'): Promise<StorefrontBanner[]> {
+    const response = await api.get<StorefrontBanner[]>('v1/store/current/storefront-banners/', {
+      params: { placement },
+    })
     return response.data
   },
 
@@ -70,11 +77,14 @@ export const storefrontAppearanceService = {
     await api.delete(`v1/store/current/storefront-banners/${id}/`)
   },
 
-  /** Persist promotional banner ordering for the active dashboard store. */
-  async reorderBanners(ids: number[]): Promise<StorefrontBanner[]> {
+  /** Persist banner ordering for the active dashboard store, scoped to one placement. */
+  async reorderBanners(
+    ids: number[],
+    placement: StorefrontBannerPlacement = 'promotion',
+  ): Promise<StorefrontBanner[]> {
     const response = await api.post<StorefrontBanner[]>(
       'v1/store/current/storefront-banners/reorder/',
-      { ids },
+      { ids, placement },
     )
     return response.data
   },

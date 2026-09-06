@@ -910,14 +910,38 @@ class StorefrontAppearance(models.Model):
 
 
 class StorefrontBanner(models.Model):
-    """Promotional storefront banner scoped to one store."""
+    """Storefront banner scoped to one store.
+
+    `placement` splits one CRUD model into two independent, independently
+    ordered lists: PLACEMENT_HERO powers the main carousel at the top of the
+    storefront (formerly a single StorefrontAppearance.hero_* image -- see
+    migration 0049), PLACEMENT_PROMOTION is the pre-existing promotional
+    banners rail. Every position/reorder/status operation is scoped to one
+    placement so the two lists never interleave.
+    """
+
+    PLACEMENT_HERO = "hero"
+    PLACEMENT_PROMOTION = "promotion"
+    PLACEMENT_CHOICES = [
+        (PLACEMENT_HERO, "Banner principal"),
+        (PLACEMENT_PROMOTION, "Banner promocional"),
+    ]
 
     store = models.ForeignKey(
         Store,
         on_delete=models.CASCADE,
         related_name="storefront_banners",
     )
+    placement = models.CharField(
+        max_length=16,
+        choices=PLACEMENT_CHOICES,
+        default=PLACEMENT_PROMOTION,
+        db_index=True,
+    )
     image_url = models.URLField(max_length=500)
+    # Optional narrower crop for small screens -- falls back to image_url
+    # when blank (see PublicStorefrontBannerSerializer / the hero carousel).
+    image_url_mobile = models.URLField(max_length=500, blank=True)
     alt_text = models.CharField(max_length=160, blank=True)
     title = models.CharField(max_length=120, blank=True)
     subtitle = models.CharField(max_length=200, blank=True)
@@ -937,10 +961,10 @@ class StorefrontBanner(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["position", "id"]
+        ordering = ["placement", "position", "id"]
         indexes = [
-            models.Index(fields=["store", "position"]),
-            models.Index(fields=["store", "is_active", "starts_at", "ends_at"]),
+            models.Index(fields=["store", "placement", "position"]),
+            models.Index(fields=["store", "placement", "is_active", "starts_at", "ends_at"]),
         ]
         constraints = [
             models.CheckConstraint(
@@ -965,13 +989,22 @@ class StorefrontBanner(models.Model):
         return "active"
 
     @classmethod
-    def public_for_store(cls, store: Store):
+    def public_for_store(cls, store: Store, placement: str | None = PLACEMENT_PROMOTION):
+        """Active, in-schedule banners for `store`.
+
+        `placement=None` returns both placements combined (ordered so hero
+        slides sort before promotions, each internally by its own position)
+        -- used by the public vitrine endpoint, which serves both carousels
+        from a single request.
+        """
         now = timezone.now()
+        queryset = cls.objects.filter(store=store, is_active=True)
+        if placement is not None:
+            queryset = queryset.filter(placement=placement)
         return (
-            cls.objects.filter(store=store, is_active=True)
-            .filter(models.Q(starts_at__isnull=True) | models.Q(starts_at__lte=now))
+            queryset.filter(models.Q(starts_at__isnull=True) | models.Q(starts_at__lte=now))
             .filter(models.Q(ends_at__isnull=True) | models.Q(ends_at__gte=now))
-            .order_by("position", "id")
+            .order_by("placement", "position", "id")
         )
 
     def refresh_button_url(self) -> None:

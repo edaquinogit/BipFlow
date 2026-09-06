@@ -700,10 +700,22 @@ class CategoryViewSet(StoreScopedViewSetMixin, viewsets.ModelViewSet):
     pagination_class = StandardPagination
 
     def get_base_queryset(self):
-        return Category.objects.select_related("parent").annotate(
+        queryset = Category.objects.select_related("parent").annotate(
             product_count=Count("products", distinct=True),
             children_count=Count("children", distinct=True),
         ).order_by("parent__name", "name", "id")
+
+        # Public storefront nav (Ciclo 9): only categories with at least one
+        # visible product -- a dashboard user still needs the full list to
+        # assign products to a newly created, still-empty category.
+        if self.request.method in (
+            "GET",
+            "HEAD",
+            "OPTIONS",
+        ) and not has_dashboard_read_access(self.request.user):
+            queryset = queryset.filter(product_count__gt=0)
+
+        return queryset
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -1973,8 +1985,22 @@ class StorefrontMediaUploadView(APIView):
         return Response(serializer.save(), status=status.HTTP_201_CREATED)
 
 
+def _resolve_banner_placement(request):
+    """Read `?placement=` (default: promotion, the pre-existing behavior).
+
+    Returns (placement, error_response) -- error_response is None on success.
+    """
+    placement = request.query_params.get("placement", StorefrontBanner.PLACEMENT_PROMOTION)
+    valid_placements = dict(StorefrontBanner.PLACEMENT_CHOICES)
+    if placement not in valid_placements:
+        return None, validation_error(
+            f"placement deve ser um de: {', '.join(valid_placements)}."
+        )
+    return placement, None
+
+
 class StorefrontBannerListView(APIView):
-    """List/create promotional banners for the active dashboard store."""
+    """List/create banners (hero or promotion) for the active dashboard store."""
 
     permission_classes = [IsAuthenticated]
 
@@ -1995,7 +2021,13 @@ class StorefrontBannerListView(APIView):
                 "Voce nao possui permissao para acessar os banners desta loja."
             )
 
-        banners = StorefrontBanner.objects.filter(store=store).order_by("position", "id")
+        placement, error = _resolve_banner_placement(request)
+        if error is not None:
+            return error
+
+        banners = StorefrontBanner.objects.filter(
+            store=store, placement=placement
+        ).order_by("position", "id")
         serializer = StorefrontBannerSerializer(
             banners,
             many=True,
@@ -2090,9 +2122,12 @@ class StorefrontBannerDetailView(APIView):
         if banner is None:
             return not_found_error("Banner nao encontrado.")
 
+        placement = banner.placement
         banner.delete()
         for index, remaining_banner in enumerate(
-            StorefrontBanner.objects.filter(store=store).order_by("position", "id")
+            StorefrontBanner.objects.filter(
+                store=store, placement=placement
+            ).order_by("position", "id")
         ):
             if remaining_banner.position != index:
                 remaining_banner.position = index
@@ -2124,12 +2159,14 @@ class StorefrontBannerReorderView(APIView):
             context={"store": store},
         )
         serializer.is_valid(raise_exception=True)
+        placement = serializer.validated_data["placement"]
 
         with transaction.atomic():
             banners_by_id = {
                 banner.id: banner
                 for banner in StorefrontBanner.objects.select_for_update().filter(
                     store=store,
+                    placement=placement,
                     id__in=serializer.validated_data["ids"],
                 )
             }
@@ -2138,7 +2175,9 @@ class StorefrontBannerReorderView(APIView):
                 banner.position = index
                 banner.save(update_fields=["position", "updated_at"])
 
-        banners = StorefrontBanner.objects.filter(store=store).order_by("position", "id")
+        banners = StorefrontBanner.objects.filter(
+            store=store, placement=placement
+        ).order_by("position", "id")
         response_serializer = StorefrontBannerSerializer(
             banners,
             many=True,
@@ -2170,7 +2209,12 @@ class PublicStorefrontAppearanceView(APIView):
 
 
 class PublicStorefrontBannerListView(APIView):
-    """Public active promotional banners for one store's vitrine."""
+    """Public active banners (hero + promotions) for one store's vitrine.
+
+    Both placements are returned in a single response -- the vitrine splits
+    them client-side by `placement` -- so mounting the storefront never costs
+    a second round trip just for the hero carousel.
+    """
 
     permission_classes = []
     authentication_classes = []
@@ -2181,7 +2225,7 @@ class PublicStorefrontBannerListView(APIView):
             return not_found_error("Loja nao encontrada.")
 
         serializer = PublicStorefrontBannerSerializer(
-            StorefrontBanner.public_for_store(store),
+            StorefrontBanner.public_for_store(store, placement=None),
             many=True,
         )
         return Response(serializer.data, status=status.HTTP_200_OK)

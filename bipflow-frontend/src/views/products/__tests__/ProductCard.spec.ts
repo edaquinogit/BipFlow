@@ -94,6 +94,57 @@ describe('ProductCard', () => {
     ])
   })
 
+  describe('color dots: image vs. color (Ciclo 9)', () => {
+    it('shows a real thumbnail using the variant image URL, not the color, when the variant has one', async () => {
+      await wrapper.setProps({
+        product: {
+          ...mockProduct,
+          variants: [
+            { id: 30, name: 'Vermelho', color_hex: '#CC0000', stock_quantity: 3, image: 'https://example.com/vermelho.jpg', is_active: true, position: 0 },
+          ],
+        },
+      })
+
+      const dot = wrapper.find('span[title="Vermelho"]')
+      const dotImg = dot.find('img')
+      expect(dotImg.exists()).toBe(true)
+      expect(dotImg.attributes('src')).toBe('https://example.com/vermelho.jpg')
+      expect(dot.attributes('style')).toBeUndefined()
+    })
+
+    it('falls back to the color background, with no <img>, when the variant has no image', async () => {
+      await wrapper.setProps({
+        product: {
+          ...mockProduct,
+          variants: [
+            { id: 31, name: 'Verde', color_hex: '#00AA00', stock_quantity: 3, image: null, is_active: true, position: 0 },
+          ],
+        },
+      })
+
+      const dot = wrapper.find('span[title="Verde"]')
+      expect(dot.find('img').exists()).toBe(false)
+      expect(dot.attributes('style')).toContain('background-color: rgb(0, 170, 0)')
+    })
+
+    it('falls back to color when the variant image fails to load', async () => {
+      await wrapper.setProps({
+        product: {
+          ...mockProduct,
+          variants: [
+            { id: 32, name: 'Quebrada', color_hex: '#3366FF', stock_quantity: 3, image: 'https://example.com/broken.jpg', is_active: true, position: 0 },
+          ],
+        },
+      })
+
+      const dot = wrapper.find('span[title="Quebrada"]')
+      await dot.find('img').trigger('error')
+
+      expect(dot.find('img').exists()).toBe(false)
+      expect(dot.attributes('style')).toContain('background-color: rgb(51, 102, 255)')
+    })
+  })
+
   it('disables the CTA and marks the product sold out when unavailable', async () => {
     await wrapper.setProps({ product: { ...mockProduct, is_available: false } })
     const cta = wrapper.get('[data-cy="add-to-cart-button"]')

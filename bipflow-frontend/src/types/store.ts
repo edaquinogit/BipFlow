@@ -97,6 +97,7 @@ export type DecorationStyle = 'none' | 'circles' | 'soft-shapes' | 'geometric'
 export type StorefrontMediaKind = 'logo' | 'banner' | 'favicon' | 'promotion'
 export type StorefrontDestinationType = 'none' | 'products' | 'category' | 'product' | 'external_url'
 export type StorefrontBannerStatus = 'active' | 'inactive' | 'scheduled' | 'expired'
+export type StorefrontBannerPlacement = 'hero' | 'promotion'
 
 export interface StorefrontMediaUploadResponse {
   kind: StorefrontMediaKind
@@ -146,7 +147,9 @@ export type PublicStorefrontAppearance = Omit<StorefrontAppearance, 'id' | 'stor
 export interface StorefrontBanner {
   id: number
   store_id: number
+  placement: StorefrontBannerPlacement
   image_url: string
+  image_url_mobile: string
   alt_text: string
   title: string
   subtitle: string
@@ -169,7 +172,9 @@ export type StorefrontBannerPayload = Partial<
 
 export type PublicStorefrontBanner = Pick<
   StorefrontBanner,
+  | 'placement'
   | 'image_url'
+  | 'image_url_mobile'
   | 'alt_text'
   | 'title'
   | 'subtitle'

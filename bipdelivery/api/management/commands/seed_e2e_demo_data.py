@@ -12,6 +12,7 @@ from bipdelivery.api.models import (
     Product,
     ProductVariant,
     Store,
+    StorefrontBanner,
 )
 
 # 1x1 transparent PNG -- product_sync.cy.ts's "absolute URLs for product
@@ -55,6 +56,13 @@ class Command(BaseCommand):
             store=store,
             name="Geral",
         )
+
+        # Seeded *before* the two demo products below: Product ordering is
+        # ["-created_at"], and product_sync.cy.ts / dashboard-storefront-menu.cy.ts
+        # both expect "Produto Demo E2E" (and its image) on the first grid
+        # page. Creating the bulk filler catalog first keeps the two demo
+        # products newest, so they stay on page one.
+        self._seed_discovery_experience(store, category)
 
         Product.objects.get_or_create(
             store=store,
@@ -121,3 +129,85 @@ class Command(BaseCommand):
             )
 
         self.stdout.write(self.style.SUCCESS(f'Demo catalog ready for store "{store.slug}".'))
+
+    # Storefront grid page size (core.settings REST_FRAMEWORK / pagination.py's
+    # ProductListPagination). Every category is filled past this so page 1 is
+    # always a full grid -- see _seed_discovery_experience.
+    _STOREFRONT_PAGE_SIZE = 12
+
+    def _seed_discovery_experience(self, store: Store, general_category: Category) -> None:
+        """Seed the Ciclo 9 storefront discovery surfaces.
+
+        `hero-carousel-and-categories.cy.ts` asserts a multi-slide hero and a
+        promotions rail. `category-scroll-preservation.cy.ts` needs at least
+        two more real categories (its back/forward test selects the 1st and
+        2nd chip) AND every category -- including "Todos" -- must render a
+        full first page: it scrolls ~900px down and asserts a category change
+        does not move the viewport, which only holds if the grid height is the
+        same before and after. A category with fewer than PAGE_SIZE products
+        renders a shorter grid, the page gets shorter than the recorded scroll
+        offset, and the browser clamps scrollY -- a layout fact, not a routing
+        regression. So every category is filled one product past a page.
+
+        Called from handle() *before* the two demo products so those stay
+        newest (Product ordering is ["-created_at"]) and remain on page one.
+
+        Seeded idempotently so this runs deterministically in CI instead of
+        against a hand-curated local dev database.
+        """
+
+        per_category = self._STOREFRONT_PAGE_SIZE + 1
+
+        categories = [general_category]
+        for name in ("Camisetas", "Calcados"):
+            extra_category, _ = Category.objects.get_or_create(store=store, name=name)
+            categories.append(extra_category)
+
+        for target_category in categories:
+            for index in range(per_category):
+                Product.objects.get_or_create(
+                    store=store,
+                    name=f"Produto Vitrine E2E {target_category.name} {index:02d}",
+                    defaults={
+                        "category": target_category,
+                        "price": Decimal("19.90") + index,
+                        "stock_quantity": 30,
+                        "is_available": True,
+                    },
+                )
+
+        # Hero + promotion banners. image_url points at a same-origin static
+        # asset shipped with the frontend (public/brand/), so it loads
+        # instantly and deterministically in CI -- no external host, no slow
+        # or failing request that would collapse a carousel mid-test. Every
+        # hero slide carries a title so the caption block's height never
+        # changes as autoplay advances.
+        hero_slides = (
+            ("Novidades da semana", "Confira os lancamentos"),
+            ("Entrega rapida", "Para toda a cidade"),
+        )
+        for position, (title, subtitle) in enumerate(hero_slides):
+            StorefrontBanner.objects.get_or_create(
+                store=store,
+                placement=StorefrontBanner.PLACEMENT_HERO,
+                title=title,
+                defaults={
+                    "image_url": "/brand/bipflow-og.png",
+                    "image_url_mobile": "/brand/bipflow-og.png",
+                    "subtitle": subtitle,
+                    "position": position,
+                    "is_active": True,
+                },
+            )
+        for position in range(3):
+            StorefrontBanner.objects.get_or_create(
+                store=store,
+                placement=StorefrontBanner.PLACEMENT_PROMOTION,
+                title=f"Promocao E2E {position + 1}",
+                defaults={
+                    "image_url": "/brand/bipflow-og.png",
+                    "image_url_mobile": "/brand/bipflow-og.png",
+                    "position": position,
+                    "is_active": True,
+                },
+            )

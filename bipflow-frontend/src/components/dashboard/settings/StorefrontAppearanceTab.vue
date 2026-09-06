@@ -38,6 +38,7 @@ import {
 } from '@/utils/storefrontMedia';
 import { STOREFRONT_PALETTE_PRESETS } from '@/utils/storefrontPalettePresets';
 import StorefrontLivePreview from './StorefrontLivePreview.vue';
+import HeroBannersSection from './storefront-appearance/HeroBannersSection.vue';
 import {
   ADVANCED_THEME_COLOR_FIELDS,
   CARD_STYLE_OPTIONS,
@@ -1307,6 +1308,8 @@ function statusLabel(statusValue: StorefrontBannerStatus | 'draft'): string {
           <button type="button" data-cy="btn-save-storefront-banner" :disabled="isSaving || !hasAppearanceChanges" class="mt-4 w-full rounded-lg bg-[#111827] px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-[#111827]/90 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-bip-muted sm:w-auto" @click="handleSaveAppearance('banner')">
             {{ isSaving ? 'Salvando...' : 'Salvar alteracoes' }}
           </button>
+
+          <HeroBannersSection :categories="categories" :products="products" />
         </section>
 
         <section v-show="activeSection === 'promocoes'" data-cy="storefront-promotions-section" class="space-y-4">
