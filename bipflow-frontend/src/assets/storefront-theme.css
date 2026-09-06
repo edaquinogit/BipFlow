@@ -11,8 +11,18 @@
   --store-primary-hover: color-mix(in srgb, var(--store-primary) 85%, black);
   --store-primary-soft: color-mix(in srgb, var(--store-primary) 12%, white);
   --store-secondary: var(--store-secondary-base, var(--store-accent));
-  --store-text-muted: var(--store-muted);
-  --store-border: color-mix(in srgb, var(--store-muted) 28%, transparent);
+  /* These are provided as contrast-checked inline vars by useStoreBranding
+     (see utils/colorContrast.ts). The color-mix() values below are only a
+     fallback for the brief window before a store theme resolves. */
+  --store-text-muted: var(--store-muted, #5b6370);
+  --store-border: color-mix(in srgb, var(--store-text, #05050a) 14%, transparent);
+  --store-brand: var(--store-primary);
+  --store-brand-contrast: #ffffff;
+  --store-brand-soft: color-mix(in srgb, var(--store-primary) 12%, white);
+  --store-brand-strong: var(--store-primary-hover, var(--store-primary));
+  --store-brand-on-light: var(--store-primary);
+  --store-brand-on-light-contrast: #ffffff;
+  --store-focus: var(--store-primary);
   --store-card-shadow: 0 18px 40px -30px rgba(5, 5, 10, 0.6);
 
   /* Controlled radius scale -- presets only, never a free pixel value. */
@@ -20,10 +30,11 @@
   --store-radius-md: 0.95rem;
   --store-radius-lg: 1.5rem;
 
-  /* Controlled motion scale -- honors prefers-reduced-motion globally (see main.css). */
-  --motion-fast: 150ms;
-  --motion-base: 250ms;
-  --motion-slow: 350ms;
+  /* Controlled motion scale -- short and functional (~120-220ms), honors
+     prefers-reduced-motion globally (see main.css). */
+  --motion-fast: 120ms;
+  --motion-base: 160ms;
+  --motion-slow: 220ms;
   --store-font-body: var(--font-sans);
   --store-font-heading: var(--font-sans);
 
@@ -76,20 +87,30 @@
 }
 
 .storefront-product-card {
-  border-radius: var(--store-radius-lg);
-  box-shadow: var(--store-card-shadow);
-  transition-duration: var(--motion-base);
+  border-radius: var(--store-radius-md);
+  /* Definition comes from the border + surface, not a permanent shadow.
+     Elevation is reserved for the hover affordance (pointer devices only). */
+  transition: border-color var(--motion-base), box-shadow var(--motion-base),
+    transform var(--motion-base);
 }
 
 .storefront-shell[data-card-style="bordered"] .storefront-product-card {
   border-width: 1.5px;
 }
 
-.storefront-shell[data-card-style="clean"] .storefront-product-card:hover,
-.storefront-shell[data-card-style="bordered"] .storefront-product-card:hover {
-  box-shadow: var(--store-card-shadow);
+.storefront-shell[data-card-style="elevated"] .storefront-product-card {
+  box-shadow: var(--shadow-sf-raise, 0 1px 2px rgba(5, 5, 10, 0.06));
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .storefront-product-card:hover {
+    border-color: color-mix(in srgb, var(--store-brand-on-light) 40%, var(--store-border));
+    box-shadow: var(--shadow-sf-raise, 0 1px 2px rgba(5, 5, 10, 0.06));
+    transform: translateY(-2px);
+  }
+}
+
+.storefront-shell[data-motion="off"] .storefront-product-card,
 .storefront-shell[data-motion="off"] .storefront-product-card:hover,
 .storefront-shell[data-motion="off"] .storefront-product-card img {
   transform: none;
@@ -114,15 +135,17 @@
 }
 
 .storefront-primary-button {
-  border-color: var(--store-primary);
-  background: var(--store-primary);
-  color: #fff;
+  border-color: var(--store-brand, var(--store-primary));
+  background: var(--store-brand, var(--store-primary));
+  /* Auto-selected near-black or white -- never a hardcoded #fff that would
+     be illegible on a pale brand colour like #FFE600. */
+  color: var(--store-brand-contrast, #fff);
   transition-duration: var(--motion-base);
 }
 
 .storefront-primary-button:hover {
-  border-color: var(--store-primary-hover);
-  background: var(--store-primary-hover);
+  border-color: var(--store-brand-strong, var(--store-primary-hover));
+  background: var(--store-brand-strong, var(--store-primary-hover));
 }
 
 .storefront-outline-button {
@@ -131,11 +154,141 @@
   transition-duration: var(--motion-base);
 }
 
+/* Native select styled to match StorefrontField (16px, no mobile zoom). */
+.storefront-select {
+  width: 100%;
+  min-height: 2.75rem;
+  border-radius: var(--store-radius-sm);
+  border: 1px solid var(--store-border);
+  background: var(--store-surface);
+  padding-inline: 0.75rem;
+  font-size: 16px;
+  color: var(--store-text);
+  outline: none;
+  transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
+}
+
+.storefront-select:focus {
+  border-color: var(--store-focus);
+  box-shadow: 0 0 0 3px var(--store-brand-soft);
+}
+
+.storefront-select:focus-visible {
+  outline: 2px solid var(--store-focus);
+  outline-offset: 2px;
+}
+
+/* Selectable chip (category filter, and future facets). */
+.storefront-chip {
+  display: inline-flex;
+  min-height: 2.25rem;
+  align-items: center;
+  border-radius: 9999px;
+  border: 1px solid var(--store-border);
+  background: var(--store-surface);
+  padding-inline: 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--store-text-muted);
+  transition: color var(--motion-fast), border-color var(--motion-fast),
+    background-color var(--motion-fast);
+}
+
+.storefront-chip:hover {
+  color: var(--store-text);
+  border-color: var(--store-brand-on-light);
+}
+
+.storefront-chip--on {
+  border-color: var(--store-brand-on-light);
+  background: var(--store-brand-on-light);
+  /* Not --store-brand-contrast: that foreground is picked against the raw
+     --store-brand, not against the darkened --store-brand-on-light fill
+     this chip actually uses as its background. */
+  color: var(--store-brand-on-light-contrast);
+}
+
+/* Sheet transition (bottom sheet on mobile, centred on >=sm). */
+.sf-sheet-enter-active,
+.sf-sheet-leave-active {
+  transition: opacity var(--motion-base) ease;
+}
+
+.sf-sheet-enter-active .sf-sheet-panel,
+.sf-sheet-leave-active .sf-sheet-panel {
+  transition: transform var(--motion-base) ease;
+}
+
+.sf-sheet-enter-from,
+.sf-sheet-leave-to {
+  opacity: 0;
+}
+
+.sf-sheet-enter-from .sf-sheet-panel,
+.sf-sheet-leave-to .sf-sheet-panel {
+  transform: translateY(100%);
+}
+
+@media (min-width: 640px) {
+  .sf-sheet-enter-from .sf-sheet-panel,
+  .sf-sheet-leave-to .sf-sheet-panel {
+    transform: translateY(1rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-sheet-enter-active .sf-sheet-panel,
+  .sf-sheet-leave-active .sf-sheet-panel {
+    transition: none;
+  }
+}
+
+/* Square 44px icon-only control (share, close, filter trigger). */
+.storefront-icon-btn {
+  display: inline-flex;
+  height: 2.75rem;
+  width: 2.75rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--store-radius-sm);
+  border: 1px solid var(--store-border);
+  background: var(--store-surface);
+  color: var(--store-text-muted);
+  transition: color var(--motion-fast), border-color var(--motion-fast),
+    background-color var(--motion-fast);
+}
+
+.storefront-icon-btn:hover {
+  color: var(--store-brand-on-light);
+  border-color: var(--store-brand-on-light);
+}
+
 .storefront-outline-button:hover {
-  border-color: var(--store-accent);
-  color: var(--store-accent);
+  /* Brand-as-text, contrast-checked against the light surface. */
+  border-color: var(--store-brand-on-light, var(--store-accent));
+  color: var(--store-brand-on-light, var(--store-accent));
 }
 
 .storefront-shell .hero-display-title {
   color: var(--store-text);
+}
+
+/* The wordmark used a fixed dark gradient that ignored the store identity
+   and could clip to near-invisible on some surfaces. Inside the storefront
+   it now renders as plain, contrast-safe store text. */
+.storefront-shell .brand-wordmark-premium,
+.storefront-shell .brand-wordmark-premium-dark {
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  color: var(--store-text);
+}
+
+/* Consistent focus ring for storefront controls that opt out of the UA
+   outline via Tailwind's `focus:outline-none` -- keeps a visible indicator
+   even when a component only declared a colour-based `focus:ring`. */
+.storefront-shell :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--store-focus, #05050a);
+  outline-offset: 2px;
 }

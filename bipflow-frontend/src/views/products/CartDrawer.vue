@@ -2,7 +2,7 @@
   <Transition name="cart-sheet">
     <div v-if="isOpen" class="fixed inset-0 z-50">
       <div
-        class="absolute inset-0 bg-[var(--store-text)]/55 backdrop-blur-sm"
+        class="absolute inset-0 bg-[var(--store-text)]/50"
         @click="$emit('close')"
       />
 
@@ -11,188 +11,226 @@
         role="dialog"
         aria-modal="true"
         aria-label="Carrinho de pedido"
-        class="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col bg-[#F8F8F9] shadow-2xl"
+        class="absolute right-0 top-0 flex h-[100dvh] w-full max-w-md flex-col bg-[var(--store-bg)] shadow-[var(--shadow-sf-overlay)]"
       >
-        <header class="border-b border-[#E5E7EB] bg-white px-4 py-4 sm:px-6 sm:py-5">
-          <div class="flex items-start justify-between gap-4">
-            <div class="min-w-0">
-              <p class="text-xs font-bold uppercase tracking-[0.12em] text-[var(--store-primary)]">Pedido</p>
-              <h2 class="mt-1.5 text-lg font-bold tracking-tight text-[var(--store-text)] sm:mt-2 sm:text-xl">
-                {{ itemCount }} item<span v-if="itemCount !== 1">s</span> no pedido
-              </h2>
-              <p class="mt-1 max-w-[34rem] text-xs leading-5 text-[var(--store-text-muted)] sm:text-sm">
-                Revise os itens e envie o pedido pelo WhatsApp.
-              </p>
-            </div>
+        <header class="flex items-center gap-2 border-b border-[var(--store-border)] bg-[var(--store-surface)] px-4 py-3 sm:px-6">
+          <button
+            v-if="step === 'details'"
+            type="button"
+            class="-ml-2 inline-flex h-11 items-center gap-1.5 rounded-[var(--store-radius-sm)] px-2 text-[0.8125rem] font-medium text-[var(--store-text-muted)] transition hover:text-[var(--store-text)] focus:outline-none"
+            aria-label="Voltar ao pedido"
+            @click="goToReview"
+          >
+            <ArrowLeftIcon class="h-4 w-4" aria-hidden="true" />
+            Voltar ao pedido
+          </button>
+          <h2
+            v-else
+            ref="reviewHeadingRef"
+            tabindex="-1"
+            class="min-w-0 flex-1 text-base font-semibold text-[var(--store-text)] focus:outline-none"
+          >
+            Pedido<span v-if="itemCount > 0" class="text-[var(--store-text-muted)]"> · {{ itemCount }} {{ itemCount === 1 ? 'item' : 'itens' }}</span>
+          </h2>
 
-            <button
-              ref="closeButtonRef"
-              type="button"
-              class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E5E7EB] text-[var(--store-text-muted)] transition hover:border-[var(--store-primary)] hover:text-[var(--store-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--store-primary-soft)] active:bg-[#FAFAFA]"
-              aria-label="Fechar carrinho"
-              @click="$emit('close')"
-            >
-              <XMarkIcon class="h-5 w-5" aria-hidden="true" />
-            </button>
-          </div>
+          <button
+            ref="closeButtonRef"
+            type="button"
+            class="storefront-icon-btn ml-auto"
+            aria-label="Fechar carrinho"
+            @click="$emit('close')"
+          >
+            <XMarkIcon class="h-5 w-5" aria-hidden="true" />
+          </button>
         </header>
 
-        <div class="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6">
-          <div v-if="items.length === 0" class="border-y border-dashed border-[#D1D5DB] py-10 text-center">
-            <ShoppingBagIcon class="mx-auto h-10 w-10 text-[var(--store-primary)]" aria-hidden="true" />
-            <p class="mt-4 text-base font-semibold text-[var(--store-text)]">Seu pedido esta vazio</p>
-            <p class="mt-2 text-sm leading-6 text-[var(--store-text-muted)]">
-              Escolha uma peca na vitrine para iniciar o pedido.
+        <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+          <!-- Empty: no steps -->
+          <div v-if="items.length === 0" class="py-16 text-center">
+            <ShoppingBagIcon class="mx-auto h-9 w-9 text-[var(--store-text-muted)]" aria-hidden="true" />
+            <p class="mt-4 text-base font-semibold text-[var(--store-text)]">Seu pedido está vazio</p>
+            <p class="mx-auto mt-2 max-w-xs text-sm leading-6 text-[var(--store-text-muted)]">
+              Escolha uma peça na vitrine para iniciar o pedido.
             </p>
+            <StorefrontButton variant="outline" class="mt-5" @click="$emit('close')">
+              Ver catálogo
+            </StorefrontButton>
           </div>
 
-          <div v-else>
-            <div class="mb-3 flex items-center justify-between">
-              <h3 class="text-sm font-bold text-[var(--store-text)]">Itens selecionados</h3>
+          <!-- Step 1: review the order -->
+          <div v-else-if="step === 'review'">
+            <div class="mb-2 flex items-center justify-between">
+              <h3 class="text-[0.8125rem] font-semibold text-[var(--store-text-muted)]">Itens</h3>
               <button
                 type="button"
-                class="min-h-11 rounded-lg px-2 text-sm font-semibold text-[var(--store-text-muted)] transition hover:bg-white hover:text-[var(--store-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--store-primary-soft)]"
+                class="min-h-9 rounded-[var(--store-radius-sm)] px-2 text-[0.8125rem] font-medium text-[var(--store-text-muted)] transition hover:text-[var(--store-brand-on-light)] focus:outline-none"
                 @click="$emit('clearCart')"
               >
                 Limpar
               </button>
             </div>
 
-            <div class="divide-y divide-[#E5E7EB]">
+            <div class="divide-y divide-[var(--store-border)]">
               <article
                 v-for="item in items"
                 :key="getCartItemKey(item.product.id, item.variant?.id ?? null)"
-                class="py-5 first:pt-2 last:pb-1"
+                class="flex gap-3 py-3"
               >
-                <div class="flex gap-3 sm:gap-4">
-                  <img
-                    :src="cartItemImage(item)"
-                    :alt="`Imagem do produto ${cartItemLabel(item)}`"
-                    class="h-[4.5rem] w-[4.5rem] shrink-0 rounded-xl bg-[#F3F4F6] object-cover sm:h-20 sm:w-20"
-                    loading="lazy"
-                  />
+                <img
+                  :src="cartItemImage(item)"
+                  :alt="`Imagem do produto ${cartItemLabel(item)}`"
+                  class="h-16 w-16 shrink-0 rounded-[var(--store-radius-sm)] border border-[var(--store-border)] bg-[var(--store-image-bg,#f3f4f6)] object-cover"
+                  loading="lazy"
+                  decoding="async"
+                />
 
-                  <div class="min-w-0 flex-1">
-                    <div class="flex items-start justify-between gap-3">
-                      <div class="min-w-0">
-                        <p class="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--store-primary)]">
-                          {{ item.product.category.name }}
-                        </p>
-                        <h4 class="mt-1 line-clamp-2 text-[15px] font-bold leading-5 text-[var(--store-text)] sm:text-base sm:leading-6">
-                          {{ item.product.name }}
-                        </h4>
-                        <p
-                          v-if="item.variant"
-                          class="mt-1.5 inline-flex min-w-0 items-center gap-2 text-[12px] font-semibold text-[#4B5563] sm:text-[13px]"
-                        >
-                          <span
-                            class="h-3 w-3 shrink-0 rounded-full border border-black/10"
-                            :style="{ backgroundColor: item.variant.color_hex }"
-                            aria-hidden="true"
-                          />
-                          <span class="truncate">{{ item.variant.name }}</span>
-                        </p>
-                        <p class="mt-1 text-[13px] text-[var(--store-text-muted)] sm:text-sm">
-                          {{ formatBRL(cartItemUnitPrice(item)) }} / unidade
-                        </p>
-                        <p
-                          v-if="item.variant"
-                          class="mt-1 text-[12px] font-semibold text-[var(--store-text-muted)] sm:text-[13px]"
-                        >
-                          {{ cartItemAvailableStock(item) }} disponiveis nesta cor
-                        </p>
-                      </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-start justify-between gap-2">
+                    <h4 class="line-clamp-2 text-[0.8125rem] font-medium leading-snug text-[var(--store-text)]">
+                      {{ item.product.name }}
+                    </h4>
+                    <button
+                      type="button"
+                      class="-mr-2 -mt-1.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--store-radius-sm)] text-[var(--store-text-muted)] transition hover:text-[var(--store-text)] focus:outline-none"
+                      :aria-label="`Remover ${cartItemLabel(item)} do pedido`"
+                      @click="$emit('removeItem', item.product.id, item.variant?.id ?? null)"
+                    >
+                      <TrashIcon class="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </div>
 
+                  <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.75rem] text-[var(--store-text-muted)]">
+                    <span
+                      v-if="item.variant"
+                      class="inline-flex min-w-0 items-center gap-1.5"
+                    >
+                      <span
+                        class="h-2.5 w-2.5 shrink-0 rounded-full border border-black/10"
+                        :style="{ backgroundColor: item.variant.color_hex }"
+                        aria-hidden="true"
+                      />
+                      <span class="truncate">{{ item.variant.name }}</span>
+                    </span>
+                    <span>{{ formatBRL(cartItemUnitPrice(item)) }} / unidade</span>
+                    <span v-if="item.variant && item.quantity >= cartItemAvailableStock(item)" class="text-[var(--store-brand-on-light)]">
+                      {{ cartItemAvailableStock(item) }} disponiveis nesta cor
+                    </span>
+                  </p>
+
+                  <div class="mt-2 flex items-center justify-between gap-2">
+                    <div class="inline-flex h-11 items-center rounded-[var(--store-radius-sm)] border border-[var(--store-border)] bg-[var(--store-surface)]">
                       <button
                         type="button"
-                        class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[#9CA3AF] transition hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-100"
-                        :aria-label="`Remover ${cartItemLabel(item)} do pedido`"
-                        @click="$emit('removeItem', item.product.id, item.variant?.id ?? null)"
+                        class="inline-flex h-11 w-10 items-center justify-center rounded-l-[var(--store-radius-sm)] text-[var(--store-text)] transition hover:bg-[var(--store-bg)] focus:outline-none"
+                        :aria-label="`Diminuir quantidade de ${cartItemLabel(item)}`"
+                        @click="$emit('updateQuantity', item.product.id, item.quantity - 1, item.variant?.id ?? null)"
                       >
-                        <TrashIcon class="h-4 w-4" aria-hidden="true" />
+                        <MinusIcon class="h-4 w-4" aria-hidden="true" />
+                      </button>
+                      <span class="min-w-8 text-center text-[0.8125rem] font-semibold text-[var(--store-text)]">
+                        {{ item.quantity }}
+                      </span>
+                      <button
+                        type="button"
+                        class="inline-flex h-11 w-10 items-center justify-center rounded-r-[var(--store-radius-sm)] text-[var(--store-text)] transition hover:bg-[var(--store-bg)] focus:outline-none disabled:opacity-35"
+                        :aria-label="`Aumentar quantidade de ${cartItemLabel(item)}`"
+                        :disabled="item.quantity >= cartItemAvailableStock(item)"
+                        @click="$emit('updateQuantity', item.product.id, item.quantity + 1, item.variant?.id ?? null)"
+                      >
+                        <PlusIcon class="h-4 w-4" aria-hidden="true" />
                       </button>
                     </div>
 
-                    <div class="mt-4 flex items-center justify-between gap-3">
-                      <div class="inline-flex h-11 items-center rounded-xl border border-[#D1D5DB] bg-white shadow-sm">
-                        <button
-                          type="button"
-                          class="inline-flex h-11 w-11 items-center justify-center rounded-l-xl text-[var(--store-text-muted)] transition hover:bg-[#FAFAFA] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[var(--store-primary-soft)]"
-                          :aria-label="`Diminuir quantidade de ${cartItemLabel(item)}`"
-                          @click="$emit('updateQuantity', item.product.id, item.quantity - 1, item.variant?.id ?? null)"
-                        >
-                          <MinusIcon class="h-4 w-4" aria-hidden="true" />
-                        </button>
-                        <span class="min-w-9 text-center text-sm font-semibold text-[var(--store-text)]">
-                          {{ item.quantity }}
-                        </span>
-                        <button
-                          type="button"
-                          class="inline-flex h-11 w-11 items-center justify-center rounded-r-xl text-[var(--store-text-muted)] transition hover:bg-[#FAFAFA] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[var(--store-primary-soft)]"
-                          :aria-label="`Aumentar quantidade de ${cartItemLabel(item)}`"
-                          :disabled="item.quantity >= cartItemAvailableStock(item)"
-                          @click="$emit('updateQuantity', item.product.id, item.quantity + 1, item.variant?.id ?? null)"
-                        >
-                          <PlusIcon class="h-4 w-4" aria-hidden="true" />
-                        </button>
-                      </div>
-
-                      <p class="text-base font-bold text-[var(--store-text)]">
-                        {{ formatBRL(Number(cartItemUnitPrice(item)) * item.quantity) }}
-                      </p>
-                    </div>
+                    <p class="text-[0.9375rem] font-semibold text-[var(--store-text)]">
+                      {{ formatBRL(Number(cartItemUnitPrice(item)) * item.quantity) }}
+                    </p>
                   </div>
                 </div>
               </article>
             </div>
           </div>
 
-          <section v-if="items.length > 0" class="mt-5 border-t border-[#D9DADD] pt-5 sm:mt-6 sm:pt-6">
-            <div class="mb-4">
-              <h3 class="text-sm font-bold text-[var(--store-text)]">Dados para finalizar</h3>
+          <!-- Step 2: identity, delivery and address -->
+          <section v-else class="pb-2">
+            <h3
+              ref="detailsHeadingRef"
+              tabindex="-1"
+              class="text-base font-semibold text-[var(--store-text)] focus:outline-none"
+            >
+              Finalizar pedido
+              <span class="font-normal text-[var(--store-text-muted)]">· {{ itemCount }} {{ itemCount === 1 ? 'item' : 'itens' }}</span>
+            </h3>
+
+            <!-- Compact, secondary financial summary -- Produtos/Frete moved out of
+                 the footer so it stops competing with the CTA for vertical space.
+                 Reuses the same reactive subtotal/deliveryFee props as the footer;
+                 no local snapshot, nothing recomputed. -->
+            <div class="mt-3 rounded-[var(--store-radius-sm)] bg-[var(--store-bg)] px-3 py-2.5" data-cy="checkout-summary">
+              <CheckoutSummaryRow label="Produtos" :value="formatBRL(subtotal)" />
+              <div v-if="freightRowState !== 'hidden'" class="mt-1">
+                <CheckoutSummaryRow
+                  label="Frete"
+                  :value="freightRowState === 'amount' ? formatBRL(deliveryFee) : 'A calcular'"
+                />
+              </div>
+              <p class="mt-2 text-[0.6875rem] text-[var(--store-text-muted)]">
+                Valor final confirmado no WhatsApp.
+              </p>
             </div>
 
-            <div class="grid gap-3.5">
+            <div class="mt-3 grid gap-3">
               <template v-if="!hasProfileIdentity">
                 <div class="grid gap-4 sm:grid-cols-2">
                   <label class="block">
-                    <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--store-text-muted)]">
+                    <span class="mb-1 block text-[0.8125rem] font-medium text-[var(--store-text-muted)]">
                       Nome
                     </span>
                     <input
+                      ref="fullNameInputRef"
                       :value="customer.fullName"
                       type="text"
                       autocomplete="name"
-                      class="h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 text-sm text-[var(--store-text)] outline-none transition focus:border-[var(--store-primary)] focus:ring-2 focus:ring-[var(--store-primary-soft)]"
+                      class="cart-field"
+                      :class="{ 'cart-field--invalid': shouldShowError('fullName') }"
                       placeholder="Seu nome"
+                      :aria-invalid="shouldShowError('fullName') ? 'true' : undefined"
+                      :aria-describedby="shouldShowError('fullName') ? 'checkout-field-full-name-error' : undefined"
                       @input="handleFullNameInput"
+                      @blur="markTouched('fullName')"
                     />
+                    <FieldError id="checkout-field-full-name-error" :message="errorMessage('fullName')" />
                   </label>
 
                   <label class="block">
-                    <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--store-text-muted)]">
+                    <span class="mb-1 block text-[0.8125rem] font-medium text-[var(--store-text-muted)]">
                       Telefone
                     </span>
                     <input
+                      ref="phoneInputRef"
                       :value="customer.phone"
                       type="tel"
                       autocomplete="tel"
-                      class="h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 text-sm text-[var(--store-text)] outline-none transition focus:border-[var(--store-primary)] focus:ring-2 focus:ring-[var(--store-primary-soft)]"
+                      class="cart-field"
+                      :class="{ 'cart-field--invalid': shouldShowError('phone') }"
                       placeholder="(11) 99999-0000"
+                      :aria-invalid="shouldShowError('phone') ? 'true' : undefined"
+                      :aria-describedby="shouldShowError('phone') ? 'checkout-field-phone-error' : undefined"
                       @input="handlePhoneInput"
+                      @blur="markTouched('phone')"
                     />
+                    <FieldError id="checkout-field-phone-error" :message="errorMessage('phone')" />
                   </label>
                 </div>
 
                 <label class="block">
-                  <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--store-text-muted)]">
+                  <span class="mb-1 block text-[0.8125rem] font-medium text-[var(--store-text-muted)]">
                     E-mail (opcional)
                   </span>
                   <input
                     :value="customer.email"
                     type="email"
                     autocomplete="email"
-                    class="h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 text-sm text-[var(--store-text)] outline-none transition focus:border-[var(--store-primary)] focus:ring-2 focus:ring-[var(--store-primary-soft)]"
+                    class="cart-field"
                     placeholder="voce@exemplo.com"
                     @input="handleEmailInput"
                   />
@@ -201,12 +239,12 @@
 
               <div class="grid gap-4 sm:grid-cols-2">
                 <label class="block">
-                  <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--store-text-muted)]">
+                  <span class="mb-1 block text-[0.8125rem] font-medium text-[var(--store-text-muted)]">
                     Entrega
                   </span>
                   <select
                     :value="customer.deliveryMethod"
-                    class="h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 text-sm text-[var(--store-text)] outline-none transition focus:border-[var(--store-primary)] focus:ring-2 focus:ring-[var(--store-primary-soft)]"
+                    class="cart-field"
                     @change="handleDeliveryMethodChange"
                   >
                     <option value="delivery">Receber em casa</option>
@@ -215,12 +253,12 @@
                 </label>
 
                 <label class="block">
-                  <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--store-text-muted)]">
+                  <span class="mb-1 block text-[0.8125rem] font-medium text-[var(--store-text-muted)]">
                     Pagamento
                   </span>
                   <select
                     :value="customer.paymentMethod"
-                    class="h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 text-sm text-[var(--store-text)] outline-none transition focus:border-[var(--store-primary)] focus:ring-2 focus:ring-[var(--store-primary-soft)]"
+                    class="cart-field"
                     @change="handlePaymentMethodChange"
                   >
                     <option value="pix">Pix</option>
@@ -232,14 +270,20 @@
 
               <template v-if="customer.deliveryMethod === 'delivery'">
                 <label class="block">
-                  <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--store-text-muted)]">
+                  <span class="mb-1 block text-[0.8125rem] font-medium text-[var(--store-text-muted)]">
                     Regiao de entrega
                   </span>
                   <select
+                    ref="deliveryRegionSelectRef"
+                    data-cy="checkout-field-delivery-region"
                     :value="customer.deliveryRegionId ?? ''"
-                    class="h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 text-sm text-[var(--store-text)] outline-none transition focus:border-[var(--store-primary)] focus:ring-2 focus:ring-[var(--store-primary-soft)]"
+                    class="cart-field"
+                    :class="{ 'cart-field--invalid': shouldShowError('deliveryRegionId') }"
                     :disabled="isDeliveryRegionsLoading || deliveryRegions.length === 0"
+                    :aria-invalid="shouldShowError('deliveryRegionId') ? 'true' : undefined"
+                    :aria-describedby="shouldShowError('deliveryRegionId') ? 'checkout-field-delivery-region-error' : undefined"
                     @change="handleDeliveryRegionChange"
+                    @blur="markTouched('deliveryRegionId')"
                   >
                     <option value="">
                       {{ deliveryRegionPlaceholder }}
@@ -252,6 +296,7 @@
                       {{ region.name }} - {{ formatBRL(region.delivery_fee) }}
                     </option>
                   </select>
+                  <FieldError id="checkout-field-delivery-region-error" :message="errorMessage('deliveryRegionId')" />
                 </label>
 
                 <div
@@ -278,59 +323,77 @@
                   </p>
 
                   <label class="block">
-                    <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--store-text-muted)]">
+                    <span class="mb-1 block text-[0.8125rem] font-medium text-[var(--store-text-muted)]">
                       Endereço
                     </span>
                     <input
+                      ref="addressInputRef"
                       :value="customer.address"
                       type="text"
                       autocomplete="street-address"
-                      class="h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 text-sm text-[var(--store-text)] outline-none transition focus:border-[var(--store-primary)] focus:ring-2 focus:ring-[var(--store-primary-soft)]"
+                      class="cart-field"
+                      :class="{ 'cart-field--invalid': shouldShowError('address') }"
                       placeholder="Rua, numero e complemento"
+                      :aria-invalid="shouldShowError('address') ? 'true' : undefined"
+                      :aria-describedby="shouldShowError('address') ? 'checkout-field-address-error' : undefined"
                       @input="handleAddressInput"
+                      @blur="markTouched('address')"
                     />
+                    <FieldError id="checkout-field-address-error" :message="errorMessage('address')" />
                   </label>
 
                   <div class="grid gap-4 sm:grid-cols-2">
                     <label class="block">
-                      <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--store-text-muted)]">
+                      <span class="mb-1 block text-[0.8125rem] font-medium text-[var(--store-text-muted)]">
                         Bairro
                       </span>
                       <input
+                        ref="neighborhoodInputRef"
                         :value="customer.neighborhood"
                         type="text"
                         autocomplete="address-level3"
-                        class="h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 text-sm text-[var(--store-text)] outline-none transition focus:border-[var(--store-primary)] focus:ring-2 focus:ring-[var(--store-primary-soft)]"
+                        class="cart-field"
+                        :class="{ 'cart-field--invalid': shouldShowError('neighborhood') }"
                         placeholder="Bairro"
+                        :aria-invalid="shouldShowError('neighborhood') ? 'true' : undefined"
+                        :aria-describedby="shouldShowError('neighborhood') ? 'checkout-field-neighborhood-error' : undefined"
                         @input="handleNeighborhoodInput"
+                        @blur="markTouched('neighborhood')"
                       />
+                      <FieldError id="checkout-field-neighborhood-error" :message="errorMessage('neighborhood')" />
                     </label>
 
                     <label class="block">
-                      <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--store-text-muted)]">
+                      <span class="mb-1 block text-[0.8125rem] font-medium text-[var(--store-text-muted)]">
                         Cidade
                       </span>
                       <input
+                        ref="cityInputRef"
                         :value="customer.city"
                         type="text"
                         autocomplete="address-level2"
-                        class="h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 text-sm text-[var(--store-text)] outline-none transition focus:border-[var(--store-primary)] focus:ring-2 focus:ring-[var(--store-primary-soft)]"
+                        class="cart-field"
+                        :class="{ 'cart-field--invalid': shouldShowError('city') }"
                         placeholder="Cidade"
+                        :aria-invalid="shouldShowError('city') ? 'true' : undefined"
+                        :aria-describedby="shouldShowError('city') ? 'checkout-field-city-error' : undefined"
                         @input="handleCityInput"
+                        @blur="markTouched('city')"
                       />
+                      <FieldError id="checkout-field-city-error" :message="errorMessage('city')" />
                     </label>
                   </div>
                 </template>
               </template>
 
               <label class="block">
-                <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[var(--store-text-muted)]">
+                <span class="mb-1 block text-[0.8125rem] font-medium text-[var(--store-text-muted)]">
                   Observacoes
                 </span>
                 <textarea
                   :value="customer.notes"
                   rows="3"
-                  class="w-full resize-none rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[var(--store-text)] outline-none transition placeholder:text-[#9CA3AF] focus:border-[var(--store-primary)] focus:ring-2 focus:ring-[var(--store-primary-soft)]"
+                  class="cart-field cart-field--area"
                   placeholder="Tamanho, referencia ou combinados do pedido"
                   @input="handleNotesInput"
                 />
@@ -339,45 +402,84 @@
           </section>
         </div>
 
-        <footer class="z-10 border-t border-[#E5E7EB] bg-white px-4 py-4 shadow-[0_-8px_24px_-22px_rgba(5,5,10,0.6)] sm:px-6 sm:py-5">
-          <div class="space-y-2.5 text-sm">
-            <div class="flex items-center justify-between text-[var(--store-text-muted)]">
-              <span>Produtos</span>
-              <span class="font-semibold text-[var(--store-text)]">{{ formatBRL(subtotal) }}</span>
+        <footer
+          v-if="items.length > 0"
+          class="border-t border-[var(--store-border)] bg-[var(--store-surface)] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 sm:px-6"
+        >
+          <!-- Step 1: full financial recap (Produtos/Frete/Total) + Continuar. -->
+          <template v-if="step === 'review'">
+            <div class="text-[0.8125rem]">
+              <div class="flex items-center justify-between text-[var(--store-text-muted)]">
+                <span>Produtos</span>
+                <span>{{ formatBRL(subtotal) }}</span>
+              </div>
+              <div
+                v-if="customer.deliveryMethod === 'delivery' && deliveryFee > 0"
+                class="mt-1 flex items-center justify-between text-[var(--store-text-muted)]"
+              >
+                <span>Frete</span>
+                <span>{{ formatBRL(deliveryFee) }}</span>
+              </div>
+              <div class="mt-2 flex items-baseline justify-between text-[var(--store-text)]">
+                <span class="text-sm font-semibold">Total</span>
+                <span class="text-lg font-semibold">{{ formatBRL(total) }}</span>
+              </div>
             </div>
-            <div
-              v-if="customer.deliveryMethod === 'delivery' && deliveryFee > 0"
-              class="flex items-center justify-between text-[var(--store-text-muted)]"
+
+            <p
+              v-if="footerMessage"
+              class="mt-2 text-[0.75rem] font-medium"
+              :class="isWhatsAppConfigured ? 'text-[var(--store-text-muted)]' : 'text-[#B45309]'"
             >
-              <span>Frete</span>
-              <span class="font-semibold text-[var(--store-text)]">{{ formatBRL(deliveryFee) }}</span>
-            </div>
-            <div class="flex items-center justify-between border-t border-[#E5E7EB] pt-3 text-[var(--store-text)]">
-              <span class="font-bold">Total estimado</span>
-              <span class="text-xl font-bold tracking-tight">{{ formatBRL(total) }}</span>
-            </div>
-            <p class="text-[11px] leading-4 text-[var(--store-text-muted)]">Valor final confirmado no WhatsApp.</p>
-            <p v-if="!isWhatsAppConfigured" class="rounded-r-lg border-l-4 border-amber-500 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
-              WhatsApp da loja ainda nao configurado.
+              {{ footerMessage }}
+            </p>
+
+            <StorefrontButton
+              data-cy="checkout-continue-button"
+              size="lg"
+              block
+              class="mt-3"
+              :disabled="!canContinue"
+              @click="goToDetails"
+            >
+              Continuar
+            </StorefrontButton>
+          </template>
+
+          <!-- Step 2: Total only + CTA -- the rest of the summary lives in the
+               body now (see .cart-summary above the form). -->
+          <template v-else>
+            <CheckoutSummaryRow label="Total" :value="formatBRL(total)" emphasis />
+
+            <p
+              v-if="footerMessage"
+              class="mt-2 text-[0.75rem] font-medium"
+              :class="isWhatsAppConfigured ? 'text-[var(--store-text-muted)]' : 'text-[#B45309]'"
+            >
+              {{ footerMessage }}
             </p>
             <p
-              v-if="checkoutValidationMessage"
-              class="rounded-r-lg border-l-4 border-[var(--store-primary)] bg-[var(--store-primary-soft)] px-3 py-2 text-sm font-semibold text-[var(--store-primary-hover)]"
+              v-if="showAttemptBanner"
+              :key="attemptCount"
+              role="alert"
+              class="mt-2 text-[0.75rem] font-medium text-[var(--color-danger)]"
             >
-              {{ checkoutValidationMessage }}
+              Revise os campos destacados.
             </p>
-          </div>
 
-          <button
-            type="button"
-            data-cy="checkout-submit-button"
-            class="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--store-text)] px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[var(--store-primary)] focus:outline-none focus:ring-4 focus:ring-[var(--store-primary-soft)] disabled:cursor-not-allowed disabled:bg-[#D1D5DB] sm:mt-5"
-            :disabled="!canSubmitCheckout"
-            @click="$emit('submitOrder')"
-          >
-            <ChatBubbleBottomCenterTextIcon class="h-5 w-5" aria-hidden="true" />
-            {{ submitButtonLabel }}
-          </button>
+            <StorefrontButton
+              data-cy="checkout-submit-button"
+              size="md"
+              block
+              class="mt-3"
+              :loading="isSubmitting"
+              :disabled="isStructurallyBlocked"
+              @click="handleSubmitClick"
+            >
+              <ChatBubbleBottomCenterTextIcon class="h-5 w-5 shrink-0" aria-hidden="true" />
+              {{ submitButtonLabel }}
+            </StorefrontButton>
+          </template>
         </footer>
       </aside>
     </div>
@@ -385,9 +487,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, toRef } from 'vue'
+import { computed, nextTick, reactive, ref, toRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import {
+  ArrowLeftIcon,
   ChatBubbleBottomCenterTextIcon,
   MinusIcon,
   PlusIcon,
@@ -395,13 +498,19 @@ import {
   TrashIcon,
   XMarkIcon,
 } from '@heroicons/vue/24/outline'
+import CheckoutSummaryRow from '@/components/storefront/CheckoutSummaryRow.vue'
+import FieldError from '@/components/storefront/FieldError.vue'
+import StorefrontButton from '@/components/storefront/StorefrontButton.vue'
 import { customerAccountPath } from '@/router/auth.routes'
 import type { CustomerProfile } from '@/types/customer'
 import type { DeliveryRegion } from '@/types/delivery'
 import type { CartCustomer, CartItem } from '@/types/product'
 import { formatBRL } from '@/utils/formatters'
 import { effectiveUnitPrice } from '@/utils/pricing'
+import { findFirstInvalidField, focusAndRevealField, type FocusableFormField } from '@/utils/formFieldFocus'
 import { useDialogA11y } from '@/composables/useDialogA11y'
+import { useMediaQuery } from '@/composables/useMediaQuery'
+import { useStorefrontOverlay } from '@/composables/useStorefrontOverlay'
 import { getCartItemKey } from '@/composables/useCart'
 
 const fallbackImageUrl = `data:image/svg+xml;utf8,${encodeURIComponent(`
@@ -443,8 +552,63 @@ const emit = defineEmits<{
 
 const containerRef = ref<HTMLElement | null>(null)
 const closeButtonRef = ref<HTMLButtonElement | null>(null)
+const reviewHeadingRef = ref<HTMLElement | null>(null)
+const detailsHeadingRef = ref<HTMLElement | null>(null)
 
 useDialogA11y(toRef(props, 'isOpen'), () => emit('close'), containerRef, closeButtonRef)
+useStorefrontOverlay(toRef(props, 'isOpen'))
+
+// Two-step checkout: 'review' the order, then 'details' (identity/delivery/
+// address). Customer data lives in the parent, so moving between steps never
+// loses input. The submit contract is unchanged -- the parent still owns the
+// payload and only reacts to `submitOrder`.
+type CheckoutStep = 'review' | 'details'
+const step = ref<CheckoutStep>('review')
+
+// Takes a getter, not a resolved element: the destination step's heading
+// isn't in the DOM yet at the call site below (it only renders once Vue
+// processes the `step` change), so its ref is still null until then --
+// reading `.value` has to happen inside the nextTick callback, after the
+// patch, not before it.
+function moveFocus(getTarget: () => HTMLElement | null): void {
+  void nextTick(() => getTarget()?.focus())
+}
+
+function goToDetails(): void {
+  if (!canContinue.value) return
+  step.value = 'details'
+  moveFocus(() => detailsHeadingRef.value)
+}
+
+function goToReview(): void {
+  step.value = 'review'
+  moveFocus(() => reviewHeadingRef.value)
+}
+
+// Reset to 'review' whenever the drawer (re)opens or the cart empties -- but
+// never mid-session (a transient submit failure keeps the shopper on 'details'
+// with their data intact). A fresh session also clears the Ciclo 8 validation
+// UI state (touched fields / attempted-submit banner) so a *new* order never
+// opens with stale red fields; going back and forth between the two steps of
+// the *same* session intentionally leaves that state alone.
+watch(
+  () => props.isOpen,
+  (open) => {
+    if (open) {
+      step.value = 'review'
+      resetValidationState()
+    }
+  },
+)
+watch(
+  () => props.items.length,
+  (count) => {
+    if (count === 0) {
+      step.value = 'review'
+      resetValidationState()
+    }
+  },
+)
 
 const route = useRoute()
 const accountRoute = computed(() => {
@@ -496,52 +660,236 @@ const stockLimitedItemLabel = computed(() => {
   return item ? cartItemLabel(item) : ''
 })
 
-const checkoutValidationMessage = computed(() => {
+// --- Ciclo 8.1: single source of truth for checkout validity ---
+//
+// `checkoutIssues` is the *only* place that inspects `props.customer` /
+// `props.items` / `props.isWhatsAppConfigured` to decide what's wrong with
+// the order as it stands. Everything else in this file -- the aggregated
+// message, the per-field errors, the submit-button gate, and "which field to
+// focus first" -- is *derived* by filtering/reducing this one list. Nothing
+// re-checks a condition that already lives here, so there is exactly one
+// place to change if a requirement ever changes.
+//
+// `kind: 'structural'` means nothing the shopper can type their way out of
+// on this step (empty cart, stock, no WhatsApp) -- only these may disable
+// the submit button. `kind: 'field'` carries the `field` key a form control
+// maps to, and only ever appears while that field is actually rendered
+// (identity fields require a guest checkout; address fields require
+// delivery + no complete saved address; the region field requires delivery
+// + at least one configured region) -- a hidden field can therefore never
+// produce an issue.
+type FieldKey = 'fullName' | 'phone' | 'deliveryRegionId' | 'address' | 'neighborhood' | 'city'
+
+interface ValidationIssue {
+  kind: 'structural' | 'field'
+  field?: FieldKey
+  message: string
+}
+
+const isGuestIdentity = computed(() => !hasProfileIdentity.value)
+const isDeliverySelected = computed(() => props.customer.deliveryMethod === 'delivery')
+const needsGuestAddress = computed(() => isDeliverySelected.value && !hasCompleteProfileAddress.value)
+const needsDeliveryRegion = computed(() => isDeliverySelected.value && props.deliveryRegions.length > 0)
+
+const checkoutIssues = computed<ValidationIssue[]>(() => {
+  const issues: ValidationIssue[] = []
+
   if (props.itemCount === 0) {
-    return 'Adicione ao menos um item ao pedido.'
+    issues.push({ kind: 'structural', message: 'Adicione ao menos um item ao pedido.' })
+    return issues // nothing else about the order matters with an empty cart
   }
 
   if (stockLimitedItemLabel.value) {
-    return `Ajuste a quantidade de ${stockLimitedItemLabel.value} ao estoque disponivel.`
+    issues.push({
+      kind: 'structural',
+      message: `Ajuste a quantidade de ${stockLimitedItemLabel.value} ao estoque disponível.`,
+    })
   }
 
-  if (!hasProfileIdentity.value && (!props.customer.fullName.trim() || !props.customer.phone.trim())) {
-    return 'Informe seu nome e telefone para finalizar o pedido.'
+  if (!props.isWhatsAppConfigured) {
+    issues.push({ kind: 'structural', message: 'WhatsApp da loja ainda não configurado.' })
   }
 
-  if (
-    props.customer.deliveryMethod === 'delivery'
-    && props.deliveryRegions.length > 0
-    && !props.customer.deliveryRegionId
-  ) {
-    return 'Selecione a regiao de entrega.'
+  if (isGuestIdentity.value) {
+    if (!props.customer.fullName.trim()) {
+      issues.push({ kind: 'field', field: 'fullName', message: 'Informe seu nome.' })
+    }
+    if (!props.customer.phone.trim()) {
+      // The existing rule only checks for a non-empty value (no format/length
+      // check exists anywhere in this flow), so the message says exactly
+      // that -- not "informe um telefone valido", which would imply a rule
+      // that isn't actually enforced.
+      issues.push({ kind: 'field', field: 'phone', message: 'Informe seu telefone.' })
+    }
   }
 
-  if (
-    props.customer.deliveryMethod === 'delivery'
-    && !hasCompleteProfileAddress.value
-    && (!props.customer.address.trim() || !props.customer.neighborhood.trim() || !props.customer.city.trim())
-  ) {
-    return 'Informe endereco, bairro e cidade para receber em casa.'
+  if (needsDeliveryRegion.value && !props.customer.deliveryRegionId) {
+    issues.push({ kind: 'field', field: 'deliveryRegionId', message: 'Selecione a região de entrega.' })
   }
 
-  return ''
+  if (needsGuestAddress.value) {
+    if (!props.customer.address.trim()) {
+      issues.push({ kind: 'field', field: 'address', message: 'Informe o endereço.' })
+    }
+    if (!props.customer.neighborhood.trim()) {
+      issues.push({ kind: 'field', field: 'neighborhood', message: 'Informe o bairro.' })
+    }
+    if (!props.customer.city.trim()) {
+      issues.push({ kind: 'field', field: 'city', message: 'Informe a cidade.' })
+    }
+  }
+
+  return issues
 })
 
-const canSubmitCheckout = computed(() => (
-  props.itemCount > 0
-  && !props.isSubmitting
-  && props.isWhatsAppConfigured
-  && !checkoutValidationMessage.value
+// Aggregated message, derived: the first issue in priority order, or empty
+// when the order is valid. Nothing renders this string directly anymore
+// (each field/structural note has its own spot), but it remains the single
+// boolean-ish gate handleSubmitClick uses to decide whether to emit
+// `submitOrder` -- unchanged in meaning from the Ciclo 7 `checkoutValidationMessage`.
+const checkoutValidationMessage = computed(() => checkoutIssues.value[0]?.message ?? '')
+
+// Only a *structural* issue (plus an in-flight submission) may disable the
+// final button -- a corrigible-only state must stay clickable so the click
+// can reveal the per-field errors and move focus (see handleSubmitClick).
+const isStructurallyBlocked = computed(() => (
+  props.isSubmitting || checkoutIssues.value.some((issue) => issue.kind === 'structural')
 ))
+
+// Step 1 -> Step 2 only needs a valid *order* (items present, none over
+// stock) and a store that can actually receive it. Personal data is Step 2's
+// job and only gates the final submit. Unchanged from Ciclo 7.
+const canContinue = computed(() => (
+  props.itemCount > 0
+  && props.isWhatsAppConfigured
+  && !stockLimitedItemLabel.value
+))
+
+// One message slot in the footer, appropriate to the current step. In
+// 'details' this now only ever carries a *structural* note (WhatsApp
+// missing / stock, both already unreachable in practice once canContinue
+// gated the step change, but kept for defensive symmetry) -- corrigible
+// field issues are surfaced per-field plus the discreet banner below, not
+// duplicated here.
+const footerMessage = computed(() => {
+  if (!props.isWhatsAppConfigured) {
+    return 'WhatsApp da loja ainda não configurado.'
+  }
+  return stockLimitedItemLabel.value
+    ? `Ajuste a quantidade de ${stockLimitedItemLabel.value} ao estoque disponível.`
+    : ''
+})
 
 const submitButtonLabel = computed(() => {
   if (props.isSubmitting) {
     return 'Registrando pedido...'
   }
 
-  return props.isWhatsAppConfigured ? 'Registrar e abrir WhatsApp' : 'WhatsApp indisponivel'
+  return props.isWhatsAppConfigured ? 'Finalizar pedido' : 'WhatsApp indisponível'
 })
+
+// "Frete ainda não calculado": delivery is selected, a region can be picked,
+// but none has been yet -- distinct from pickup (no freight row at all) and
+// from a resolved fee. Reuses the exact same reactive props the footer
+// already used; nothing here is computed or cached locally.
+const freightRowState = computed<'hidden' | 'amount' | 'pending'>(() => {
+  if (!isDeliverySelected.value) return 'hidden'
+  if (props.deliveryFee > 0) return 'amount'
+  if (!props.customer.deliveryRegionId && props.deliveryRegions.length > 0) return 'pending'
+  return 'hidden'
+})
+
+// --- Ciclo 8: per-field presentation over `checkoutIssues` (see above) ---
+
+const fullNameInputRef = ref<HTMLElement | null>(null)
+const phoneInputRef = ref<HTMLElement | null>(null)
+const deliveryRegionSelectRef = ref<HTMLElement | null>(null)
+const addressInputRef = ref<HTMLElement | null>(null)
+const neighborhoodInputRef = ref<HTMLElement | null>(null)
+const cityInputRef = ref<HTMLElement | null>(null)
+
+const FIELD_REFS: Record<FieldKey, typeof fullNameInputRef> = {
+  fullName: fullNameInputRef,
+  phone: phoneInputRef,
+  deliveryRegionId: deliveryRegionSelectRef,
+  address: addressInputRef,
+  neighborhood: neighborhoodInputRef,
+  city: cityInputRef,
+}
+
+const touchedFields = reactive<Partial<Record<FieldKey, boolean>>>({})
+const attemptedSubmit = ref(false)
+const attemptCount = ref(0)
+
+function markTouched(field: FieldKey): void {
+  touchedFields[field] = true
+}
+
+function resetValidationState(): void {
+  attemptedSubmit.value = false
+  attemptCount.value = 0
+  for (const key of Object.keys(touchedFields) as FieldKey[]) {
+    delete touchedFields[key]
+  }
+}
+
+// Every per-field question below (is there an error? what does it say? is
+// there *any* corrigible error? which field should get focus?) is answered
+// by looking up `checkoutIssues` -- never by re-evaluating a condition.
+function fieldIssue(field: FieldKey): ValidationIssue | undefined {
+  return checkoutIssues.value.find((issue) => issue.field === field)
+}
+
+function shouldShowError(field: FieldKey): boolean {
+  return Boolean(fieldIssue(field)) && (touchedFields[field] === true || attemptedSubmit.value)
+}
+
+function errorMessage(field: FieldKey): string {
+  return shouldShowError(field) ? (fieldIssue(field)?.message ?? '') : ''
+}
+
+const hasAnyCorrigibleFieldError = computed(() => (
+  checkoutIssues.value.some((issue) => issue.kind === 'field')
+))
+
+const showAttemptBanner = computed(() => attemptedSubmit.value && hasAnyCorrigibleFieldError.value)
+
+const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
+
+async function handleSubmitClick(): Promise<void> {
+  if (isStructurallyBlocked.value) {
+    return
+  }
+
+  attemptedSubmit.value = true
+
+  if (checkoutValidationMessage.value) {
+    // A corrigible field is still invalid: block the submission, reveal
+    // every applicable error and move focus to the first one -- never emit
+    // submitOrder for an order the backend would reject anyway. The
+    // candidate list -- and therefore focus order -- comes straight from
+    // checkoutIssues, in the same priority order it already pushes fields in
+    // (which matches the form's visual top-to-bottom order).
+    attemptCount.value += 1
+    await nextTick()
+
+    const candidates: FocusableFormField[] = checkoutIssues.value
+      .filter((issue) => issue.kind === 'field' && issue.field !== undefined)
+      .map((issue) => ({
+        key: issue.field as FieldKey,
+        applicable: true,
+        invalid: true,
+        element: FIELD_REFS[issue.field as FieldKey].value,
+      }))
+    const firstInvalid = findFirstInvalidField(candidates)
+    if (firstInvalid?.element) {
+      focusAndRevealField(firstInvalid.element, { reduceMotion: prefersReducedMotion.value })
+    }
+    return
+  }
+
+  emit('submitOrder')
+}
 
 function cartItemImage(item: CartItem): string {
   return item.variant?.image || item.product.image || fallbackImageUrl
@@ -636,16 +984,57 @@ function handleDeliveryRegionChange(event: Event): void {
 </script>
 
 <style scoped>
-aside input,
-aside select {
-  min-height: 3rem;
-  border-radius: 0.75rem;
+/* Shared storefront field styling for the checkout inputs/selects: 16px text
+   (no mobile auto-zoom), token colours, consistent focus ring. */
+.cart-field {
+  width: 100%;
+  min-height: 2.75rem;
+  border-radius: var(--store-radius-sm);
+  border: 1px solid var(--store-border);
+  background: var(--store-surface);
   padding-inline: 0.875rem;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--store-text);
+  outline: none;
+  scroll-margin-block: 5rem;
+  transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
 }
 
-aside textarea {
-  border-radius: 0.75rem;
-  padding: 0.625rem 0.875rem;
+.cart-field::placeholder {
+  color: var(--store-text-muted);
+}
+
+.cart-field:focus {
+  border-color: var(--store-focus);
+  box-shadow: 0 0 0 3px var(--store-brand-soft);
+}
+
+.cart-field:focus-visible {
+  outline: 2px solid var(--store-focus);
+  outline-offset: 2px;
+}
+
+.cart-field:disabled {
+  background: var(--store-bg);
+  color: var(--store-text-muted);
+}
+
+.cart-field--area {
+  min-height: 4.5rem;
+  padding-block: 0.625rem;
+  resize: none;
+}
+
+/* Ciclo 8: field-level invalid state -- border color changes, but the icon +
+   text in FieldError.vue (and aria-invalid) carry the meaning, not color alone. */
+.cart-field--invalid {
+  border-color: var(--color-danger);
+}
+
+.cart-field--invalid:focus {
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-danger) 18%, transparent);
 }
 
 .cart-sheet-enter-active,

@@ -409,4 +409,29 @@ describe('ProductDetailView', () => {
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/l/default/produtos/premium-burger'))
     expect(Logger.warn).toHaveBeenCalled()
   })
+
+  it('offers a persistent purchase bar with a running total and adds from it', async () => {
+    // The mobile sticky bar shows quantity x unit price and adds to the cart.
+    await wrapper.find('button[aria-label="Aumentar quantidade"]').trigger('click')
+    await nextTick()
+
+    const stickyAdd = wrapper.findAll('button').find((b) => b.text().trim() === 'Adicionar')
+    expect(stickyAdd).toBeDefined()
+
+    // 2 x 42,50 = 85,00
+    expect(wrapper.text()).toContain('85,00')
+
+    await stickyAdd!.trigger('click')
+    expect(cartState.addItem).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), 2, null)
+  })
+
+  it('orders the mobile content as image -> price -> purchase controls -> description', () => {
+    const html = wrapper.html()
+    const priceIndex = html.indexOf('42,50')
+    const quantityIndex = html.indexOf('Quantidade')
+    const descriptionIndex = html.indexOf('Blend especial')
+    expect(priceIndex).toBeGreaterThan(-1)
+    expect(priceIndex).toBeLessThan(quantityIndex)
+    expect(quantityIndex).toBeLessThan(descriptionIndex)
+  })
 })

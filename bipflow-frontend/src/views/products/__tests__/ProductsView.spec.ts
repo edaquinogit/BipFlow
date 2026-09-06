@@ -513,13 +513,12 @@ describe('ProductsView', () => {
     expect(wrapper.findComponent(CartDrawerStub).props('isOpen')).toBe(true)
   })
 
-  it('stages a quick category pick without applying it until Salvar is clicked', async () => {
+  it('stages a quick category pick without applying it until "Ver resultados"', async () => {
     await wrapper.find('[aria-label="Abrir filtros"]').trigger('click')
 
-    const buttons = wrapper.findAll('button')
-    const categoryButton = buttons.find(
-      (button) => button.text() === 'Test Category',
-    )
+    const categoryButton = wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Test Category')
 
     expect(categoryButton).toBeDefined()
 
@@ -527,10 +526,10 @@ describe('ProductsView', () => {
 
     expect(searchState.updateFilters).not.toHaveBeenCalled()
 
-    const saveButton = wrapper
+    const applyButton = wrapper
       .findAll('button')
-      .find((button) => button.text() === 'Salvar')
-    await saveButton!.trigger('click')
+      .find((button) => button.text().includes('Ver resultados'))
+    await applyButton!.trigger('click')
 
     expect(searchState.updateFilters).toHaveBeenCalledWith({
       categoryId: 1,
@@ -538,7 +537,7 @@ describe('ProductsView', () => {
     })
   })
 
-  it('stages the in-stock checkbox without applying it until Salvar is clicked', async () => {
+  it('stages the in-stock checkbox without applying it until "Ver resultados"', async () => {
     await wrapper.find('[aria-label="Abrir filtros"]').trigger('click')
 
     const stockCheckbox = wrapper.find('input[type="checkbox"]')
@@ -548,10 +547,10 @@ describe('ProductsView', () => {
 
     expect(searchState.updateFilters).not.toHaveBeenCalled()
 
-    const saveButton = wrapper
+    const applyButton = wrapper
       .findAll('button')
-      .find((button) => button.text() === 'Salvar')
-    await saveButton!.trigger('click')
+      .find((button) => button.text().includes('Ver resultados'))
+    await applyButton!.trigger('click')
 
     expect(searchState.updateFilters).toHaveBeenCalledWith({
       categoryId: undefined,
@@ -577,16 +576,13 @@ describe('ProductsView', () => {
     searchState.totalPages.value = 1
   })
 
-  it('discards staged filter changes when Cancelar is clicked', async () => {
+  it('discards staged filter changes when the sheet is dismissed', async () => {
     await wrapper.find('[aria-label="Abrir filtros"]').trigger('click')
 
     const stockCheckbox = wrapper.find('input[type="checkbox"]')
     await stockCheckbox.setValue(true)
 
-    const cancelButton = wrapper
-      .findAll('button')
-      .find((button) => button.text() === 'Cancelar')
-    await cancelButton!.trigger('click')
+    await wrapper.find('[aria-label="Fechar filtros"]').trigger('click')
 
     expect(searchState.updateFilters).not.toHaveBeenCalled()
     expect(

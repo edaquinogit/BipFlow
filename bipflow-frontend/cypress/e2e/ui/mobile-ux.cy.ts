@@ -12,14 +12,15 @@ describe('mobile UX regressions', () => {
     // logs in, so it would always land on the login screen instead.
     cy.visit('/produtos')
 
-    // Mobile-safe = responsive AND pinch-zoomable. `maximum-scale`/
-    // `user-scalable=no` were removed (WCAG 1.4.4 / 1.4.10); auto-zoom on
-    // input focus is prevented by the 16px field font size checked below,
-    // not by blocking the user's zoom.
+    // Ciclo 1 (Fundação Visual da Vitrine): pinch/double-tap zoom must NOT be
+    // blocked (WCAG 1.4.4 / 1.4.10). The viewport is device-width + safe-area
+    // only -- no maximum-scale, no user-scalable=no.
     cy.get('meta[name="viewport"]')
       .should('have.attr', 'content')
-      .and('match', /width=device-width/)
-      .and('not.match', /maximum-scale|user-scalable\s*=\s*no/)
+      .and('contain', 'width=device-width')
+      .and('contain', 'viewport-fit=cover')
+      .and('not.contain', 'maximum-scale')
+      .and('not.contain', 'user-scalable')
 
     // This test used to assert IntroSplash.vue's "bem-vindo" welcome dialog
     // rendered here -- removed intentionally in adbe25d ("Removes the idle

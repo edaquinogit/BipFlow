@@ -9,49 +9,42 @@
     :data-decoration="storefrontAppearance?.decoration_enabled ? storefrontAppearance.decoration_style : 'none'"
     :style="storeBranding.cssVars"
   >
-    <header class="storefront-header border-b">
-      <div class="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3.5 min-[390px]:py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
-        <button
-          type="button"
-          class="storefront-outline-button inline-flex h-10 w-fit items-center gap-2 rounded-xl border bg-white px-4 text-[11px] font-bold uppercase tracking-[0.14em] transition min-[390px]:text-xs"
-          @click="goBackToCatalog"
-        >
-          <ArrowLeftIcon class="h-4 w-4" aria-hidden="true" />
-          Voltar ao catalogo
-        </button>
+    <StorefrontHeader
+      variant="detail"
+      :store-name="storeBranding.name"
+      :logo-url="storeBranding.logoUrl"
+      :catalog-to="catalogRoute"
+      :item-count="itemCount"
+      :subtotal="subtotal"
+      @open-cart="openCart"
+    >
+      <template #account>
+        <CustomerProfileMenuButton />
+      </template>
+    </StorefrontHeader>
 
-        <div class="flex items-center justify-between gap-2.5 min-[390px]:gap-3">
-          <div class="flex min-w-0 items-center gap-2.5 min-[390px]:gap-3">
-            <div class="flex h-11 w-28 shrink-0 items-center justify-center overflow-hidden min-[390px]:h-12 min-[390px]:w-32">
-              <img
-                :src="storeBranding.logoUrl"
-                :alt="storeBranding.name"
-                class="h-full w-full object-contain"
-              />
-            </div>
-            <div class="min-w-0">
-              <p class="brand-wordmark brand-wordmark-premium truncate text-base min-[390px]:text-lg">{{ storeBranding.name }}</p>
-              <p class="storefront-muted truncate text-[11px] min-[390px]:text-xs">{{ storeBranding.tagline }}</p>
-            </div>
+    <main class="mx-auto max-w-7xl px-4 py-4 pb-28 sm:px-6 lg:px-8 lg:py-8 lg:pb-16">
+      <button
+        type="button"
+        class="storefront-back-link mb-3 inline-flex items-center gap-1.5 text-[0.8125rem] font-medium text-[var(--store-text-muted)] transition-colors hover:text-[var(--store-brand-on-light)] lg:mb-4"
+        @click="goBackToCatalog"
+      >
+        <ArrowLeftIcon class="h-4 w-4" aria-hidden="true" />
+        Catálogo
+      </button>
+
+      <div v-if="isLoading" class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start lg:gap-10">
+        <StorefrontSkeleton radius="lg" class="aspect-[4/5] w-full" />
+
+        <div class="space-y-3">
+          <StorefrontSkeleton variant="text" width="35%" />
+          <StorefrontSkeleton height="1.75rem" width="80%" />
+          <StorefrontSkeleton height="1.75rem" width="45%" />
+          <div class="flex gap-2 pt-2">
+            <StorefrontSkeleton variant="circle" width="2.75rem" height="2.75rem" />
+            <StorefrontSkeleton variant="circle" width="2.75rem" height="2.75rem" />
           </div>
-
-          <CustomerProfileMenuButton />
-        </div>
-      </div>
-    </header>
-
-    <main class="mx-auto max-w-7xl px-4 py-6 pb-24 min-[390px]:py-8 sm:px-6 lg:px-8">
-      <div v-if="isLoading" class="grid gap-6 min-[390px]:gap-8 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
-        <div class="animate-pulse">
-          <div class="aspect-[4/5] rounded-lg bg-[#F3F4F6]" />
-        </div>
-
-        <div class="animate-pulse">
-          <div class="h-4 w-32 rounded bg-slate-200" />
-          <div class="mt-4 h-8 rounded bg-slate-200" />
-          <div class="mt-5 h-10 w-40 rounded bg-slate-200" />
-          <div class="mt-5 h-24 rounded bg-slate-200" />
-          <div class="mt-6 h-36 rounded bg-slate-200" />
+          <StorefrontSkeleton height="5rem" class="!mt-6" />
         </div>
       </div>
 
@@ -69,263 +62,257 @@
           {{ errorMessage || 'O produto pode ter sido removido ou esta temporariamente indisponivel.' }}
         </p>
         <div class="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <button
-            type="button"
-            class="inline-flex items-center justify-center rounded-lg bg-[var(--store-text)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--store-primary)]"
-            @click="loadProduct"
-          >
-            Tentar novamente
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center justify-center rounded-lg border border-[#D1D5DB] bg-white px-5 py-3 text-sm font-semibold text-[var(--store-text)] transition hover:border-[var(--store-primary)] hover:text-[var(--store-primary)]"
-            @click="goBackToCatalog"
-          >
+          <StorefrontButton @click="loadProduct">Tentar novamente</StorefrontButton>
+          <StorefrontButton variant="outline" @click="goBackToCatalog">
             Voltar ao catalogo
-          </button>
+          </StorefrontButton>
         </div>
       </div>
 
-      <div v-else class="grid gap-6 min-[390px]:gap-8 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
-        <section class="min-w-0 space-y-3.5 min-[390px]:space-y-4">
+      <div v-else class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start lg:gap-10">
+        <section class="min-w-0 space-y-3">
           <div
-            class="w-full overflow-hidden rounded-[1.15rem] bg-[#F3F4F6] min-[390px]:rounded-lg"
+            class="relative aspect-[4/5] w-full touch-pan-y overflow-hidden rounded-[var(--store-radius-lg)] border border-[var(--store-border)] bg-[var(--store-image-bg,#f3f4f6)]"
             @mouseenter="pauseCarousel"
             @mouseleave="resumeCarousel"
+            @pointerdown="handlePointerDown"
+            @pointermove="handlePointerMove"
+            @pointerup="handlePointerUp"
+            @pointercancel="handlePointerCancel"
+            @pointerleave="handlePointerLeave"
           >
-            <div
-              class="relative aspect-[4/5] overflow-hidden bg-[#F3F4F6] touch-pan-y"
-              @pointerdown="handlePointerDown"
-              @pointermove="handlePointerMove"
-              @pointerup="handlePointerUp"
-              @pointercancel="handlePointerCancel"
-              @pointerleave="handlePointerLeave"
-            >
-              <Transition :name="slideTransitionName" mode="out-in">
-                <img
-                  :key="activeImageSource"
-                  :src="activeImageSource"
-                  :alt="`Imagem do produto ${product.name}`"
-                  class="h-full w-full select-none object-contain p-4 min-[390px]:p-5 sm:p-8"
-                  loading="eager"
-                  draggable="false"
-                  @error="handleImageError"
-                />
-              </Transition>
+            <Transition :name="slideTransitionName" mode="out-in">
+              <img
+                :key="activeImageSource"
+                :src="activeImageSource"
+                :alt="`Imagem do produto ${product.name}`"
+                class="h-full w-full select-none object-contain p-4 sm:p-8"
+                loading="eager"
+                decoding="async"
+                draggable="false"
+                @error="handleImageError"
+              />
+            </Transition>
 
-              <div
-                v-if="productImages.length > 1"
-                class="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 px-4 py-4"
-              >
-                <span
-                  v-for="(imageUrl, index) in productImages"
-                  :key="`${imageUrl}-${index}`"
-                  class="h-1.5 rounded-full transition-all duration-300"
-                  :class="imageUrl === activeImageSource ? 'w-8 bg-white' : 'w-2.5 bg-white/55'"
-                />
-              </div>
+            <div
+              v-if="productImages.length > 1"
+              class="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 py-3"
+            >
+              <span
+                v-for="(imageUrl, index) in productImages"
+                :key="`${imageUrl}-${index}`"
+                class="h-1.5 rounded-full transition-all"
+                :class="imageUrl === activeImageSource ? 'w-6 bg-[var(--store-text)]' : 'w-1.5 bg-[var(--store-text)]/30'"
+              />
             </div>
           </div>
 
-          <div v-if="productImages.length > 1" class="flex gap-2.5 overflow-x-auto pb-1 min-[390px]:gap-3">
+          <div v-if="productImages.length > 1" class="flex gap-2 overflow-x-auto pb-1">
             <button
               v-for="imageUrl in productImages"
               :key="imageUrl"
               type="button"
-                class="h-[4.5rem] w-[4.5rem] shrink-0 overflow-hidden rounded-[1rem] border bg-white transition min-[390px]:h-20 min-[390px]:w-20 min-[390px]:rounded-lg sm:h-24 sm:w-24"
+              class="aspect-square h-16 w-16 shrink-0 overflow-hidden rounded-[var(--store-radius-sm)] border bg-[var(--store-surface)] transition sm:h-20 sm:w-20"
               :class="imageUrl === activeImageSource
-                ? 'border-[var(--store-primary)]'
-                : 'border-[#E5E7EB] hover:border-[var(--store-primary)]'"
-              :aria-label="`Selecionar imagem do produto ${product.name}`"
+                ? 'border-[var(--store-brand-on-light)]'
+                : 'border-[var(--store-border)] hover:border-[var(--store-brand-on-light)]'"
+              :aria-label="`Ver imagem ${product.name}`"
               @click="handleSelectImage(imageUrl)"
             >
-              <div class="aspect-square overflow-hidden bg-slate-100">
-                <img
-                  :src="imageUrl"
-                  :alt="`Miniatura do produto ${product.name}`"
-                  class="h-full w-full object-contain p-1.5"
-                  loading="lazy"
-                />
-              </div>
+              <img
+                :src="imageUrl"
+                :alt="`Miniatura ${product.name}`"
+                class="h-full w-full object-contain p-1.5"
+                loading="lazy"
+              />
             </button>
           </div>
         </section>
 
-        <aside class="min-w-0 lg:sticky lg:top-6 lg:self-start">
-          <section class="w-full max-w-full">
-            <div class="flex flex-wrap items-center justify-between gap-2.5 min-[390px]:gap-3">
-              <p class="text-xs font-bold uppercase tracking-[0.16em] text-[var(--store-primary)] min-[390px]:text-sm min-[390px]:normal-case min-[390px]:tracking-normal">
-                {{ product.category.name }}
-              </p>
-              <div class="flex items-center gap-2">
-                <button
-                  type="button"
-                  class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border bg-white transition focus:outline-none focus:ring-2 focus:ring-[var(--store-primary-soft)] min-[390px]:h-10 min-[390px]:w-10"
-                  :class="isShareCopied
-                    ? 'border-[var(--store-primary)] bg-[var(--store-primary)] text-white shadow-[0_12px_24px_-18px_rgba(216,27,96,0.6)]'
-                    : 'storefront-outline-button hover:border-[var(--store-primary)] hover:text-[var(--store-primary)]'"
-                  :aria-label="isShareCopied ? 'Link do produto copiado' : 'Compartilhar produto'"
-                  :title="isShareCopied ? 'Link copiado' : 'Compartilhar produto'"
-                  @click="void handleShareProduct()"
+        <aside class="min-w-0 lg:sticky lg:top-24 lg:self-start">
+          <!-- 1. Context -->
+          <div class="flex items-start justify-between gap-3">
+            <p class="min-w-0 truncate text-[0.8125rem] font-medium text-[var(--store-text-muted)]">
+              {{ product.category.name }}
+            </p>
+            <button
+              type="button"
+              class="storefront-icon-btn -mr-1 -mt-1"
+              :class="{ 'border-[var(--store-brand-on-light)] text-[var(--store-brand-on-light)]': isShareCopied }"
+              :aria-label="isShareCopied ? 'Link do produto copiado' : 'Compartilhar produto'"
+              @click="void handleShareProduct()"
+            >
+              <CheckIcon v-if="isShareCopied" class="h-4 w-4" aria-hidden="true" />
+              <ShareIcon v-else class="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+
+          <!-- 2. Product -->
+          <h1 class="mt-1 text-2xl font-semibold leading-tight text-[var(--store-text)] sm:text-3xl">
+            {{ product.name }}
+          </h1>
+
+          <!-- 3. Price -->
+          <p class="mt-2 flex items-baseline gap-2 text-2xl font-semibold text-[var(--store-text)] sm:text-[1.75rem]">
+            <span>
+              <span v-if="headerPrice.from" class="text-base font-medium text-[var(--store-text-muted)]">A partir de </span>{{ formatBRL(headerPrice.amount) }}
+            </span>
+            <span
+              v-if="!canAddSelectedItem"
+              class="text-[0.8125rem] font-semibold text-[var(--store-text-muted)]"
+            >
+              Indisponível
+            </span>
+          </p>
+
+          <div class="mt-5 space-y-5">
+            <!-- 4. Variant -->
+            <div v-if="activeVariants.length > 0" class="space-y-2.5">
+              <div class="flex items-baseline justify-between gap-2">
+                <p class="text-sm font-semibold text-[var(--store-text)]">
+                  Cor: <span class="font-normal text-[var(--store-text-muted)]">{{ selectedVariant?.name || 'selecione' }}</span>
+                </p>
+                <p
+                  v-if="selectedVariant"
+                  class="text-[0.75rem] font-medium"
+                  :class="selectedVariantAvailableStock > 0 ? 'text-[var(--store-text-muted)]' : 'text-[var(--store-text-muted)]'"
                 >
-                  <CheckIcon
-                    v-if="isShareCopied"
-                    class="h-4 w-4 min-[390px]:h-[18px] min-[390px]:w-[18px]"
+                  {{ selectedVariantAvailableStock > 0 ? `${selectedVariantAvailableStock} disponíveis` : 'Esgotada' }}
+                </p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  v-for="variant in activeVariants"
+                  :key="variant.id"
+                  type="button"
+                  class="relative inline-flex h-11 w-11 items-center justify-center rounded-full border-2 bg-[var(--store-surface)] transition focus:outline-none"
+                  :class="selectedVariant?.id === variant.id
+                    ? 'border-[var(--store-brand-on-light)]'
+                    : 'border-[var(--store-border)] hover:border-[var(--store-brand-on-light)]'"
+                  :disabled="variantAvailableStock(variant) <= 0"
+                  :aria-label="`Selecionar cor ${variant.name}`"
+                  :aria-pressed="selectedVariant?.id === variant.id"
+                  :title="variant.name"
+                  @click="handleSelectVariant(variant)"
+                >
+                  <span
+                    class="h-7 w-7 rounded-full border border-black/10"
+                    :class="{ 'opacity-30': variantAvailableStock(variant) <= 0 }"
+                    :style="{ backgroundColor: variant.color_hex }"
                     aria-hidden="true"
                   />
-                  <ShareIcon
-                    v-else
-                    class="h-4 w-4 min-[390px]:h-[18px] min-[390px]:w-[18px]"
+                  <span
+                    v-if="variantAvailableStock(variant) <= 0"
+                    class="pointer-events-none absolute inset-x-1 top-1/2 h-px -rotate-45 bg-[var(--store-text-muted)]"
                     aria-hidden="true"
                   />
                 </button>
-
-                <span
-                  class="rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] min-[390px]:text-xs"
-                  :class="canAddSelectedItem ? 'bg-[var(--store-primary-soft)] text-[var(--store-primary)]' : 'bg-slate-100 text-slate-600'"
-                >
-                  {{ availabilityLabel }}
-                </span>
               </div>
             </div>
 
-            <h1 class="mt-2.5 text-[1.8rem] font-semibold leading-[1.05] text-[var(--store-text)] min-[390px]:mt-3 min-[390px]:text-3xl sm:text-4xl">
-              {{ product.name }}
-            </h1>
-
-            <p class="mt-4 text-[1.9rem] font-semibold tracking-[-0.03em] text-[var(--store-text)] min-[390px]:mt-5 min-[390px]:text-3xl">
-              <span v-if="headerPrice.from" class="text-[0.6em] font-medium text-[var(--store-text-muted)]">A partir de </span>{{ formatBRL(headerPrice.amount) }}
-            </p>
-
-            <p class="mt-3 text-[13px] leading-6 text-slate-600 min-[390px]:text-sm">
-              {{ productDescription }}
-            </p>
-
-            <dl class="mt-5 divide-y divide-[#E5E7EB] border-y border-[#E5E7EB] text-[13px] text-[var(--store-text-muted)] min-[390px]:mt-6 min-[390px]:text-sm">
-              <div class="flex items-center justify-between gap-4 py-3">
-                <dt>Tamanho</dt>
-                <dd class="text-right font-semibold text-[var(--store-text)]">{{ product.size || 'Sob consulta' }}</dd>
+            <!-- 5. Quantity -->
+            <div class="flex items-center justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-sm font-semibold text-[var(--store-text)]">Quantidade</p>
+                <p v-if="cartQuantity > 0" class="mt-0.5 text-[0.75rem] text-[var(--store-text-muted)]">
+                  {{ cartQuantity }} já no pedido
+                </p>
               </div>
-              <div class="flex items-center justify-between gap-4 py-3">
-                <dt>SKU</dt>
-                <dd class="text-right font-semibold text-[var(--store-text)]">{{ product.sku || 'Nao informado' }}</dd>
+              <div class="inline-flex h-11 items-center rounded-[var(--store-radius-md)] border border-[var(--store-border)] bg-[var(--store-surface)]">
+                <button
+                  type="button"
+                  class="inline-flex h-11 w-11 items-center justify-center rounded-l-[var(--store-radius-md)] text-[var(--store-text-muted)] transition hover:text-[var(--store-text)] disabled:opacity-35"
+                  :disabled="!canAddSelectedItem || quantity <= 1"
+                  aria-label="Diminuir quantidade"
+                  @click="decrementQuantity"
+                >
+                  <MinusIcon class="h-4 w-4" aria-hidden="true" />
+                </button>
+                <span class="min-w-9 text-center text-base font-semibold text-[var(--store-text)]">{{ quantity }}</span>
+                <button
+                  type="button"
+                  class="inline-flex h-11 w-11 items-center justify-center rounded-r-[var(--store-radius-md)] text-[var(--store-text-muted)] transition hover:text-[var(--store-text)] disabled:opacity-35"
+                  :disabled="!canAddSelectedItem || quantity >= currentAvailableStock"
+                  aria-label="Aumentar quantidade"
+                  @click="incrementQuantity"
+                >
+                  <PlusIcon class="h-4 w-4" aria-hidden="true" />
+                </button>
               </div>
-              <div class="flex items-center justify-between gap-4 py-3">
-                <dt>Estoque</dt>
-                <dd class="text-right font-semibold" :class="availabilityToneClass">
-                  {{ currentAvailableStock > 0 ? `${currentAvailableStock} un.` : 'Indisponivel' }}
+            </div>
+
+            <!-- 6. CTA (desktop in-flow; mobile uses the sticky bar) -->
+            <div class="hidden lg:block">
+              <StorefrontButton
+                size="lg"
+                block
+                :disabled="!canAddSelectedItem"
+                @click="handleAddToCart"
+              >
+                <ShoppingBagIcon class="h-5 w-5 shrink-0" aria-hidden="true" />
+                {{ addToCartLabel }}
+              </StorefrontButton>
+            </div>
+          </div>
+
+          <!-- 7. Description + details -->
+          <div class="mt-6 space-y-4 border-t border-[var(--store-border)] pt-5">
+            <p class="text-sm leading-6 text-[var(--store-text-muted)]">{{ productDescription }}</p>
+            <dl class="divide-y divide-[var(--store-border)] border-y border-[var(--store-border)] text-[0.8125rem]">
+              <div class="flex items-center justify-between gap-4 py-2.5">
+                <dt class="text-[var(--store-text-muted)]">Tamanho</dt>
+                <dd class="font-medium text-[var(--store-text)]">{{ product.size || 'Sob consulta' }}</dd>
+              </div>
+              <div class="flex items-center justify-between gap-4 py-2.5">
+                <dt class="text-[var(--store-text-muted)]">SKU</dt>
+                <dd class="font-medium text-[var(--store-text)]">{{ product.sku || 'Não informado' }}</dd>
+              </div>
+              <div class="flex items-center justify-between gap-4 py-2.5">
+                <dt class="text-[var(--store-text-muted)]">Estoque</dt>
+                <dd class="font-medium text-[var(--store-text)]">
+                  {{ currentAvailableStock > 0 ? `${currentAvailableStock} un.` : 'Indisponível' }}
                 </dd>
               </div>
             </dl>
-
-            <div class="mt-5 border-t border-[#E5E7EB] pt-4 min-[390px]:mt-6 min-[390px]:pt-5">
-              <div class="flex flex-col gap-3.5 min-[390px]:gap-4">
-                <div
-                  v-if="activeVariants.length > 0"
-                  class="flex flex-col gap-3 border-b border-[#E5E7EB] pb-4"
-                >
-                  <div class="flex items-center justify-between gap-3">
-                    <div class="min-w-0">
-                      <p class="text-sm font-semibold text-[var(--store-text)]">Cor</p>
-                      <p class="mt-1 truncate text-[13px] text-slate-600 min-[390px]:text-sm">
-                        {{ selectedVariant?.name || 'Selecione uma cor' }}
-                      </p>
-                      <p
-                        v-if="selectedVariant"
-                        class="mt-1 text-[12px] font-semibold min-[390px]:text-[13px]"
-                        :class="selectedVariantAvailableStock > 0 ? 'text-[var(--store-primary)]' : 'text-slate-500'"
-                      >
-                        {{ selectedVariantAvailableStock > 0 ? `${selectedVariantAvailableStock} disponiveis` : 'Cor esgotada' }}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div class="flex flex-wrap gap-2">
-                    <button
-                      v-for="variant in activeVariants"
-                      :key="variant.id"
-                      type="button"
-                      class="inline-flex h-11 min-w-11 items-center justify-center rounded-full border bg-white p-1 transition focus:outline-none focus:ring-2 focus:ring-[var(--store-primary-soft)]"
-                      :class="selectedVariant?.id === variant.id
-                        ? 'border-[var(--store-primary)] shadow-[0_12px_24px_-18px_rgba(216,27,96,0.65)]'
-                        : 'border-[#D8DDE5] hover:border-[var(--store-primary)]'"
-                      :disabled="variantAvailableStock(variant) <= 0"
-                      :aria-label="`Selecionar cor ${variant.name}`"
-                      :title="variant.name"
-                      @click="handleSelectVariant(variant)"
-                    >
-                      <span
-                        class="h-8 w-8 rounded-full border border-black/10"
-                        :class="{ 'opacity-35': variantAvailableStock(variant) <= 0 }"
-                        :style="{ backgroundColor: variant.color_hex }"
-                        aria-hidden="true"
-                      />
-                    </button>
-                  </div>
-                </div>
-
-                <div class="flex items-center justify-between gap-3 min-[390px]:gap-4">
-                  <div>
-                    <p class="text-sm font-semibold text-[var(--store-text)]">
-                      Quantidade
-                    </p>
-                    <p class="mt-1 text-[13px] text-slate-600 min-[390px]:text-sm">
-                      {{ cartQuantity > 0 ? `${cartQuantity} ja no pedido` : 'Selecione e confirme em um toque.' }}
-                    </p>
-                  </div>
-
-                  <div class="inline-flex h-11 items-center rounded-[0.95rem] border border-[#D8DDE5] bg-white shadow-[0_12px_28px_-24px_rgba(5,5,10,0.55)] min-[390px]:h-12 min-[390px]:rounded-xl">
-                    <button
-                      type="button"
-                      class="inline-flex h-11 w-10 items-center justify-center rounded-l-[0.95rem] text-[var(--store-text-muted)] transition hover:bg-[#FAFAFA] disabled:cursor-not-allowed disabled:opacity-40 min-[390px]:h-12 min-[390px]:w-11 min-[390px]:rounded-l-xl"
-                      :disabled="!canAddSelectedItem || quantity <= 1"
-                      aria-label="Diminuir quantidade"
-                      @click="decrementQuantity"
-                    >
-                      <MinusIcon class="h-4 w-4" aria-hidden="true" />
-                    </button>
-                    <span class="min-w-8 text-center text-[15px] font-semibold text-[var(--store-text)] min-[390px]:min-w-11 min-[390px]:text-base">
-                      {{ quantity }}
-                    </span>
-                    <button
-                      type="button"
-                      class="inline-flex h-11 w-10 items-center justify-center rounded-r-[0.95rem] text-[var(--store-text-muted)] transition hover:bg-[#FAFAFA] disabled:cursor-not-allowed disabled:opacity-40 min-[390px]:h-12 min-[390px]:w-11 min-[390px]:rounded-r-xl"
-                      :disabled="!canAddSelectedItem || quantity >= currentAvailableStock"
-                      aria-label="Aumentar quantidade"
-                      @click="incrementQuantity"
-                    >
-                      <PlusIcon class="h-4 w-4" aria-hidden="true" />
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  class="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-[12px] font-bold uppercase tracking-[0.12em] shadow-[0_16px_34px_-24px_rgba(5,5,10,0.65)] transition duration-200 focus:outline-none focus:ring-2 focus:ring-[var(--store-primary-soft)] min-[390px]:px-6 min-[390px]:py-3.5 min-[390px]:text-[13px] min-[390px]:tracking-[0.14em] sm:text-sm"
-                  :class="canAddSelectedItem
-                    ? 'bg-[var(--store-text)] text-white hover:-translate-y-0.5 hover:bg-[var(--store-primary)] hover:shadow-[0_18px_40px_-24px_rgba(216,27,96,0.55)]'
-                    : 'cursor-not-allowed bg-slate-200 text-slate-500'"
-                  :disabled="!canAddSelectedItem"
-                  @click="handleAddToCart"
-                >
-                  <ShoppingBagIcon class="h-5 w-5 shrink-0" aria-hidden="true" />
-                  {{ addToCartLabel }}
-                </button>
-              </div>
-            </div>
-          </section>
+          </div>
         </aside>
       </div>
 
-      <footer class="mt-10 border-t border-[#E5E7EB] py-6 text-center">
-        <FeedbackTrigger :product-id="feedbackProductId" type="product" />
-      </footer>
+      <StorefrontFooter
+        :store-name="storeBranding.name"
+        :tagline="storeBranding.tagline"
+        :merchant="storefrontAppearance?.merchant"
+      >
+        <template #feedback>
+          <FeedbackTrigger :product-id="feedbackProductId" type="product" />
+        </template>
+      </StorefrontFooter>
     </main>
 
-    <FloatingCartButton
-      :item-count="itemCount"
-      @open-cart="openCart"
-    />
+    <!-- Mobile sticky purchase bar: keeps the primary action thumb-reachable
+         while the shopper reads the description. Desktop uses the in-flow CTA. -->
+    <div
+      v-if="product && !isLoading && !errorMessage"
+      class="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--store-border)] bg-[var(--store-surface)] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 lg:hidden"
+    >
+      <div class="mx-auto flex max-w-7xl items-center gap-3">
+        <div class="min-w-0">
+          <p class="text-[0.6875rem] text-[var(--store-text-muted)]">
+            {{ quantity > 1 ? `${quantity} un.` : 'Total' }}
+          </p>
+          <p class="truncate text-base font-semibold text-[var(--store-text)]">{{ formatBRL(stickyLineTotal) }}</p>
+        </div>
+        <StorefrontButton
+          class="flex-1"
+          size="lg"
+          :disabled="!canAddSelectedItem"
+          @click="handleAddToCart"
+        >
+          <ShoppingBagIcon class="h-5 w-5 shrink-0" aria-hidden="true" />
+          {{ canAddSelectedItem ? 'Adicionar' : 'Indisponível' }}
+        </StorefrontButton>
+      </div>
+    </div>
 
     <CartDrawer
       :is-open="isCartOpen"
@@ -363,13 +350,17 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 import CartDrawer from './CartDrawer.vue'
 import CustomerProfileMenuButton from './CustomerProfileMenuButton.vue'
-import FloatingCartButton from './FloatingCartButton.vue'
 import FeedbackTrigger from '@/components/feedback/FeedbackTrigger.vue'
+import StorefrontButton from '@/components/storefront/StorefrontButton.vue'
+import StorefrontFooter from '@/components/storefront/StorefrontFooter.vue'
+import StorefrontHeader from '@/components/storefront/StorefrontHeader.vue'
+import StorefrontSkeleton from '@/components/storefront/StorefrontSkeleton.vue'
 import { useCart } from '@/composables/useCart'
 import { useCurrentStore } from '@/composables/useCurrentStore'
 import { useCustomerProfile } from '@/composables/useCustomerProfile'
 import { usePublicStorefrontAppearance } from '@/composables/usePublicStorefrontAppearance'
 import { useStoreTheme } from '@/composables/useStoreTheme'
+import { useStorefrontDocumentMeta } from '@/composables/useStorefrontDocumentMeta'
 import { useToast } from '@/composables/useToast'
 import { PublicRoutes } from '@/router/public.routes'
 import { authService } from '@/services/auth.service'
@@ -383,9 +374,9 @@ import type { DeliveryRegion } from '@/types/delivery'
 import type { ProductDetail, ProductVariant } from '@/types/product'
 import { formatBRL } from '@/utils/formatters'
 import { displayPrice, effectiveUnitPrice } from '@/utils/pricing'
+import { PRODUCT_IMAGE_PLACEHOLDER } from '@/utils/productImagePlaceholder'
 import { buildPublicProductUrl } from '@/utils/publicStorefrontUrl'
 import { applyStorefrontFavicon } from '@/utils/storefrontFavicon'
-import { isLowStock } from '@/utils/stockAlerts'
 
 const route = useRoute()
 const router = useRouter()
@@ -403,6 +394,13 @@ const publicStoreSlug = computed(() => currentRouteStoreSlug.value || selectedSt
 const { appearance: storefrontAppearance } = usePublicStorefrontAppearance(publicStoreSlug)
 const storeBranding = useStoreTheme(selectedStore, storefrontAppearance)
 
+const catalogRoute = computed(() => {
+  const storeSlug = currentRouteStoreSlug.value
+  return storeSlug
+    ? { name: PublicRoutes.StoreProducts, params: { storeSlug } }
+    : { name: PublicRoutes.Products }
+})
+
 watch(
   () => storefrontAppearance.value?.favicon_url,
   (faviconUrl) => {
@@ -411,18 +409,17 @@ watch(
   { immediate: true },
 )
 
-const FALLBACK_IMAGE_URL = `data:image/svg+xml;utf8,${encodeURIComponent(`
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 800">
-    <rect width="640" height="800" fill="#FAFAFA"/>
-    <rect x="96" y="128" width="448" height="544" rx="36" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="2"/>
-    <path d="M222 330h196c18 0 32 14 32 32v118c0 18-14 32-32 32H222c-18 0-32-14-32-32V362c0-18 14-32 32-32z" fill="#F3F4F6"/>
-    <path d="M236 462l52-54c10-10 26-10 36 0l34 35 18-19c10-11 28-11 38 0l58 60v28H236z" fill="#D1D5DB"/>
-    <circle cx="276" cy="382" r="22" fill="#111827" opacity=".16"/>
-    <text x="320" y="592" text-anchor="middle" fill="#6B7280" font-family="Arial, sans-serif" font-size="26" font-weight="700">Imagem em breve</text>
-  </svg>
-`)}`
+const FALLBACK_IMAGE_URL = PRODUCT_IMAGE_PLACEHOLDER
 const product = ref<ProductDetail | null>(null)
 const feedbackProductId = computed(() => product.value?.id ?? null)
+
+useStorefrontDocumentMeta({
+  storeName: computed(() => (selectedStore.value ? storeBranding.value.name : null)),
+  description: computed(
+    () => storefrontAppearance.value?.tagline || storeBranding.value.tagline || null,
+  ),
+  suffix: computed(() => product.value?.name ?? null),
+})
 const deliveryRegions = ref<DeliveryRegion[]>([])
 const storeWhatsAppPhone = ref('')
 const activeImage = ref<string | null>(null)
@@ -711,25 +708,16 @@ const cartQuantity = computed(() => (
 
 const isWhatsAppConfigured = computed(() => storeWhatsAppPhone.value.length > 0)
 
-const availabilityLabel = computed(() => {
-  if (!product.value || !canAddSelectedItem.value) {
-    return 'Indisponivel'
-  }
-
-  if (selectedVariant.value && selectedVariantAvailableStock.value <= 5) {
-    return 'Ultimas da cor'
-  }
-
-  return isLowStock(product.value) ? 'Ultimas unidades' : 'Disponivel'
+// Running line total for the mobile sticky purchase bar (display only --
+// the backend recomputes the real price at checkout).
+const stickyLineTotal = computed(() => {
+  const unit = Number(headerPrice.value.amount) || 0
+  return String(unit * Math.max(1, quantity.value))
 })
-
-const availabilityToneClass = computed(() => (
-  canAddSelectedItem.value ? 'text-[var(--store-primary)]' : 'text-slate-600'
-))
 
 const addToCartLabel = computed(() => {
   if (!canAddSelectedItem.value) {
-    return 'Indisponivel'
+    return 'Indisponível'
   }
 
   if (quantity.value > 1) {
@@ -1018,7 +1006,9 @@ function handleAddToCart(): void {
 
   addItem(product.value, quantity.value, selectedVariant.value)
   const variantLabel = selectedVariant.value?.name ? ` - ${selectedVariant.value.name}` : ''
-  toast.success(`${quantity.value} unidade(s) de ${product.value.name}${variantLabel} adicionada(s) ao pedido.`)
+  // Ciclo 8: same dedup key as ProductsView's add-to-cart toast -- repeated
+  // or cross-page quick adds update one toast in place.
+  toast.success(`${quantity.value} unidade(s) de ${product.value.name}${variantLabel} adicionada(s) ao pedido.`, undefined, 'cart-add')
   quantity.value = 1
 }
 

@@ -4,7 +4,6 @@ import { Logger } from '@/services/logger'
 import { getSelectedStoreSlug } from '@/services/store-scope'
 import { getErrorRequestId } from '@/types/errors'
 import type { PaginatedProductsResponse, Product, ProductFilters } from '@/types/product'
-import { debounce } from '@/utils/debounce'
 
 export interface UseProductSearchOptions {
   pageSize?: number
@@ -165,11 +164,33 @@ export const useProductSearch = (
     }
   }
 
-  const debouncedSearch = debounce(async () => {
-    await fetchProductsInternal()
-  }, { delay: debounceDelay })
+  // Trailing-edge debounce dedicated to the free-text search box. This used to
+  // go through the shared `@/utils/debounce`, but that utility gates its
+  // trailing edge on a non-empty argument list -- and `updateFilters` invokes
+  // it with no arguments -- so every keystroke-driven search fetch was silently
+  // dropped and the catalog request went out without `search` at all. A tiny
+  // local timer with one responsibility removes that failure mode entirely.
+  // `fetchProductsInternal` reads `filters.value` itself, so nothing needs to
+  // be threaded through the closure.
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+  const cancelPendingSearch = (): void => {
+    if (searchDebounceTimer !== null) {
+      clearTimeout(searchDebounceTimer)
+      searchDebounceTimer = null
+    }
+  }
+
+  const scheduleSearch = (): void => {
+    cancelPendingSearch()
+    searchDebounceTimer = setTimeout(() => {
+      searchDebounceTimer = null
+      void fetchProductsInternal()
+    }, debounceDelay)
+  }
 
   const fetchProducts = async (): Promise<void> => {
+    cancelPendingSearch()
     await fetchProductsInternal()
   }
 
@@ -182,10 +203,14 @@ export const useProductSearch = (
     cache.clear()
 
     if ('search' in newFilters) {
-      debouncedSearch()
+      scheduleSearch()
       return
     }
 
+    // A structured filter (category / stock / price) is a committed choice, not
+    // mid-typing: fetch now and drop any keystroke fetch still pending so a
+    // slower stale search response can't land on top of it.
+    cancelPendingSearch()
     void fetchProductsInternal()
   }
 
@@ -193,6 +218,7 @@ export const useProductSearch = (
     filters.value = normalizeFilters({})
     page.value = 1
     cache.clear()
+    cancelPendingSearch()
     void fetchProductsInternal()
   }
 
@@ -207,6 +233,7 @@ export const useProductSearch = (
     }
 
     page.value = pageNumber
+    cancelPendingSearch()
     void fetchProductsInternal()
   }
 
@@ -216,6 +243,7 @@ export const useProductSearch = (
     }
 
     page.value += 1
+    cancelPendingSearch()
     void fetchProductsInternal()
   }
 
@@ -225,6 +253,7 @@ export const useProductSearch = (
     }
 
     page.value -= 1
+    cancelPendingSearch()
     void fetchProductsInternal()
   }
 
@@ -236,11 +265,12 @@ export const useProductSearch = (
   watch(pageSize, () => {
     page.value = 1
     cache.clear()
+    cancelPendingSearch()
     void fetchProductsInternal()
   })
 
   onBeforeUnmount(() => {
-    debouncedSearch.cancel()
+    cancelPendingSearch()
   })
 
   nextTick(() => {

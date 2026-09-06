@@ -104,4 +104,20 @@ class Command(BaseCommand):
             },
         )
 
+        # A handful of extra simple products. checkout-visual-audit.cy.ts adds
+        # three *distinct* cart lines (addDistinctProductsToCart) and asserts
+        # `[data-cy="add-to-cart-button"]` has length >= 3, which the two
+        # products above cannot satisfy. Idempotent, in stock, no variants.
+        for index in range(4):
+            Product.objects.get_or_create(
+                store=store,
+                name=f"Produto Vitrine E2E {index:02d}",
+                defaults={
+                    "category": category,
+                    "price": Decimal("24.90") + index,
+                    "stock_quantity": 30,
+                    "is_available": True,
+                },
+            )
+
         self.stdout.write(self.style.SUCCESS(f'Demo catalog ready for store "{store.slug}".'))
