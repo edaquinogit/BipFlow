@@ -46,3 +46,4 @@ __screenshots__/
 *.bak
 audit-report.json
 test-output.log
+scripts/.qa/
