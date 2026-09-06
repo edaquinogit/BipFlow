@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Static sitemap for the crawlable, non-tenant pages. Per-merchant storefront
+  URLs (/l/:slug/produtos …) are generated per store and are not enumerated
+  here; each storefront is discoverable from its own shared links.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://bipflow-manage.pages.dev/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>
