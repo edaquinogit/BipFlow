@@ -83,12 +83,30 @@ def on_bg(rgba: Image.Image, bg: tuple[int, int, int, int]) -> Image.Image:
     return base.convert("RGB")
 
 
-def load_font(size: int) -> ImageFont.FreeTypeFont:
-    for name in ("segoeuib.ttf", "arialbd.ttf", "calibrib.ttf"):
-        p = Path("C:/Windows/Fonts") / name
-        if p.exists():
-            return ImageFont.truetype(str(p), size)
-    return ImageFont.load_default()
+_FONT_CANDIDATES = (
+    "C:/Windows/Fonts/segoeuib.ttf",
+    "C:/Windows/Fonts/arialbd.ttf",
+    "C:/Windows/Fonts/calibrib.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/Library/Fonts/Arial Bold.ttf",
+)
+
+
+def load_font(size: int):
+    for path in _FONT_CANDIDATES:
+        if Path(path).exists():
+            return ImageFont.truetype(path, size)
+    try:
+        # Pillow >= 10.1 scales the built-in font; keeps the wordmark legible
+        # on machines with none of the fonts above (CI, minimal Linux).
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        sys.exit(
+            "ERROR: no bundled TrueType font found and this Pillow cannot size "
+            "the default font. Install DejaVu/Liberation or upgrade Pillow."
+        )
 
 
 def save_png(img: Image.Image, name: str) -> None:

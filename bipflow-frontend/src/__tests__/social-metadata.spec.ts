@@ -154,6 +154,14 @@ describe('social metadata — asset files exist and match their declarations', (
     expect(robots).toMatch(new RegExp(`Sitemap:\\s*${CANONICAL_ORIGIN}/sitemap\\.xml`))
   })
 
+  it('the advertised sitemap.xml actually exists and is real XML', () => {
+    const xml = readFileSync(resolve(PUBLIC, 'sitemap.xml'), 'utf8')
+    expect(xml).toMatch(/^<\?xml/)
+    expect(xml).toMatch(/<urlset\b[^>]*sitemaps\.org/)
+    expect(xml).toMatch(new RegExp(`<loc>${CANONICAL_ORIGIN}/</loc>`))
+    expect(xml).not.toMatch(/localhost|127\.0\.0\.1/)
+  })
+
   it('_headers keeps the login pages out of search results (noindex, follow)', () => {
     const headers = readFileSync(resolve(PUBLIC, '_headers'), 'utf8')
     for (const route of ['/login', '/entrar']) {

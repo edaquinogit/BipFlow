@@ -8,4 +8,5 @@ docker-compose.yml text eol=lf
 bipflow-frontend/public/_headers text eol=lf
 bipflow-frontend/public/_redirects text eol=lf
 bipflow-frontend/public/robots.txt text eol=lf
+bipflow-frontend/public/sitemap.xml text eol=lf
 *.webmanifest text eol=lf
