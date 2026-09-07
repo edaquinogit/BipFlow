@@ -199,9 +199,18 @@ const badgeCount = computed(() => (props.itemCount > 99 ? '99+' : String(props.i
     border-color var(--motion-base, 160ms);
 }
 
-.storefront-header__cart:hover {
-  border-color: var(--store-brand-on-light);
-  color: var(--store-brand-on-light);
+/* Pointer-only: on touch, mobile Safari keeps `:hover` after a tap, which
+   left the account/cart controls wearing a hard dark border indefinitely. */
+@media (hover: hover) and (pointer: fine) {
+  .storefront-header__cart:hover {
+    border-color: var(--store-brand-on-light);
+    color: var(--store-brand-on-light);
+  }
+}
+
+/* Brief press feedback that clears the instant the finger lifts. */
+.storefront-header__cart:active {
+  background: color-mix(in srgb, var(--store-text) 6%, var(--store-surface));
 }
 
 /* On desktop the header cart is the primary order CTA (no floating button

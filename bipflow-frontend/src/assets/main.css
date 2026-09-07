@@ -109,8 +109,12 @@ textarea {
   min-height: 44px;
 }
 
-button,
-a {
+/* No grey/black flash box on tap (iOS/Android). `-webkit-tap-highlight-color`
+   inherits, so setting it once on the root covers every control -- buttons,
+   links, checkboxes, labels and click-handling wrappers alike. Interaction
+   feedback is provided instead by the short, self-clearing `:active` states
+   the storefront controls declare. */
+html {
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -118,15 +122,24 @@ a {
    `:focus-visible { outline: none }` (which removed focus with no
    substitute). A 2px solid ring with a 2px offset clears the 3:1
    non-text contrast bar; inside the storefront it takes the store's
-   contrast-checked `--store-focus` colour. */
+   contrast-checked `--store-focus` colour. The outline follows each
+   element's own border-radius, so rounded buttons and pill chips keep
+   their shape (an earlier `border-radius: 2px` here squared them off). */
 :focus-visible {
   outline: 2px solid var(--focus-ring, #05050a);
   outline-offset: 2px;
-  border-radius: 2px;
 }
 
 .storefront-shell :focus-visible {
   outline-color: var(--store-focus, var(--focus-ring, #05050a));
+}
+
+/* Pointer / touch focus must not leave a UA focus ring parked on a control
+   after the finger lifts -- mobile Safari keeps `:focus` on a tapped
+   <button>, so its default ring would sit there until the next tap.
+   Keyboard focus is unaffected: it still matches `:focus-visible` above. */
+.storefront-shell :where(a, button, [role="button"], summary):focus:not(:focus-visible) {
+  outline: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

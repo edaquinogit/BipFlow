@@ -89,6 +89,8 @@ const variantClass = computed(() => `storefront-btn--${props.variant}`)
   min-width: max-content;
 }
 
+/* Press feedback: 1px dip, clears on touchend -- reliable on every device
+   (unlike :hover, which mobile Safari leaves stuck after a tap). */
 .storefront-btn:active:not(:disabled) {
   transform: translateY(1px);
 }
@@ -99,7 +101,16 @@ const variantClass = computed(() => `storefront-btn--${props.variant}`)
   color: var(--store-brand-contrast, #ffffff);
 }
 
-.storefront-btn--primary:hover:not(:disabled) {
+/* Hover is pointer-only so it can't stick on touch (a bottom-sheet button
+   the finger last touched would otherwise keep the hover shade). */
+@media (hover: hover) and (pointer: fine) {
+  .storefront-btn--primary:hover:not(:disabled) {
+    border-color: var(--store-brand-strong, #000000);
+    background: var(--store-brand-strong, #000000);
+  }
+}
+
+.storefront-btn--primary:active:not(:disabled) {
   border-color: var(--store-brand-strong, #000000);
   background: var(--store-brand-strong, #000000);
 }
@@ -116,9 +127,11 @@ const variantClass = computed(() => `storefront-btn--${props.variant}`)
   color: var(--store-text, #05050a);
 }
 
-.storefront-btn--outline:hover:not(:disabled) {
-  border-color: var(--store-brand-on-light, #05050a);
-  color: var(--store-brand-on-light, #05050a);
+@media (hover: hover) and (pointer: fine) {
+  .storefront-btn--outline:hover:not(:disabled) {
+    border-color: var(--store-brand-on-light, #05050a);
+    color: var(--store-brand-on-light, #05050a);
+  }
 }
 
 .storefront-btn--ghost {
@@ -127,7 +140,13 @@ const variantClass = computed(() => `storefront-btn--${props.variant}`)
   color: var(--store-brand-on-light, #05050a);
 }
 
-.storefront-btn--ghost:hover:not(:disabled) {
+@media (hover: hover) and (pointer: fine) {
+  .storefront-btn--ghost:hover:not(:disabled) {
+    background: var(--store-brand-soft, #f3f4f6);
+  }
+}
+
+.storefront-btn--ghost:active:not(:disabled) {
   background: var(--store-brand-soft, #f3f4f6);
 }
 

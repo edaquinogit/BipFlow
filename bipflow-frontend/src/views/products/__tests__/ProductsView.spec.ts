@@ -721,4 +721,52 @@ describe('ProductsView', () => {
       .find((button) => button.text().includes('Ver todos os produtos'))
     expect(viewAllButton).toBeUndefined()
   })
+
+  // Interaction-polish cycle: tapping a header control must never cost the
+  // store its name, and dismissing the filter sheet (by any path) must leave
+  // no modal node or body-scroll lock behind.
+  describe('storefront interaction polish', () => {
+    it('keeps the store name in the header after the cart and account controls are used', async () => {
+      expect(wrapper.text()).toContain('Loja Principal')
+
+      await wrapper.get('[data-cy="open-cart-button"]').trigger('click')
+      await wrapper.get('[aria-label="Entrar ou criar perfil"]').trigger('click')
+      await nextTick()
+
+      expect(wrapper.text()).toContain('Loja Principal')
+      // The brand lockup itself, not just some other copy on the page.
+      expect(wrapper.find('.storefront-brand').text()).toContain('Loja Principal')
+    })
+
+    it('leaves no dialog node or body scroll lock after the filter sheet is closed with the X', async () => {
+      await wrapper.find('[aria-label="Abrir filtros"]').trigger('click')
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+      expect(document.body.style.overflow).toBe('hidden')
+
+      await wrapper.find('[aria-label="Fechar filtros"]').trigger('click')
+      await nextTick()
+
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+      expect(document.body.style.overflow).toBe('')
+      expect(
+        wrapper.find('[aria-label="Abrir filtros"]').attributes('aria-expanded'),
+      ).toBe('false')
+    })
+
+    it('closes the filter sheet and clears state when "Limpar" is pressed inside it', async () => {
+      await wrapper.find('[aria-label="Abrir filtros"]').trigger('click')
+
+      const clearButton = wrapper
+        .findAll('[role="dialog"] button')
+        .find((button) => button.text().trim() === 'Limpar')
+      expect(clearButton).toBeDefined()
+
+      await clearButton!.trigger('click')
+      await nextTick()
+
+      expect(searchState.clearFilters).toHaveBeenCalled()
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+      expect(document.body.style.overflow).toBe('')
+    })
+  })
 })
