@@ -75,15 +75,27 @@ class AuthEndpointThrottlingTest(TestCase):
 
     def test_login_is_throttled_by_client_ip(self) -> None:
         payload = {"username": "unknown@example.com", "password": "wrong-password"}
+        cors_origin = "http://localhost:5173"
 
         for _ in range(2):
-            response: Any = self.client.post("/api/auth/token/", payload, format="json")
+            response: Any = self.client.post(
+                "/api/auth/token/",
+                payload,
+                format="json",
+                HTTP_ORIGIN=cors_origin,
+            )
             self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-        response = self.client.post("/api/auth/token/", payload, format="json")
+        response = self.client.post(
+            "/api/auth/token/",
+            payload,
+            format="json",
+            HTTP_ORIGIN=cors_origin,
+        )
 
         self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
         self.assertIn("Retry-After", response)
+        self.assertEqual(response["Access-Control-Expose-Headers"], "Retry-After")
 
     def test_login_is_throttled_by_submitted_identity_across_ips(self) -> None:
         payload = {"username": self.user.username, "password": "wrong-password"}

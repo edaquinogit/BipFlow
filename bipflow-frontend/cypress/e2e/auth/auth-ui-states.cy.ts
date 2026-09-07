@@ -51,7 +51,12 @@ describe('Authentication UI states', () => {
   it('renders rate limiting as a critical inline state', () => {
     cy.intercept('POST', '**/auth/token/', {
       statusCode: 429,
-      headers: { 'retry-after': '120' },
+      // The app and API use different origins in CI and production. Mirror
+      // the API's CORS contract so browser code can read Retry-After.
+      headers: {
+        'retry-after': '120',
+        'access-control-expose-headers': 'Retry-After',
+      },
       body: { detail: 'rate limited' },
     }).as('loginRequest')
 

@@ -411,6 +411,10 @@ else:
 CSRF_TRUSTED_ORIGINS = get_env_list("CSRF_TRUSTED_ORIGINS")
 
 CORS_ALLOW_CREDENTIALS = True
+# Browsers hide non-safelisted response headers from cross-origin frontend
+# code unless the API explicitly exposes them. DRF uses Retry-After on 429
+# responses and the login UI reads it to show the real wait window.
+CORS_EXPOSE_HEADERS = ["Retry-After"]
 # The dashboard's store switcher sends this on every request (see
 # store_scope.resolve_request_store) -- without it in the allowlist, the
 # browser's CORS preflight rejects every call that carries it, including
