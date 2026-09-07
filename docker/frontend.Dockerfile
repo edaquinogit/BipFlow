@@ -15,7 +15,7 @@ FROM nginx:1.27-alpine
 
 ARG BIPFLOW_COMMIT_SHA=local
 
-LABEL org.opencontainers.image.source="https://github.com/edaquinogit/BipFlow-Manage" \
+LABEL org.opencontainers.image.source="https://github.com/edaquinogit/BipFlow" \
       org.opencontainers.image.revision="${BIPFLOW_COMMIT_SHA}" \
       org.opencontainers.image.title="BipFlow frontend"
 

@@ -1,4 +1,4 @@
-# BipFlow Manage — https://bipflow-manage.pages.dev
+# Bip Flow — https://bipflow-manage.pages.dev
 # The landing page, the admin login (/login), the storefront login (/entrar)
 # and every storefront (vitrine) are crawlable so social crawlers (LinkedIn,
 # Facebook, X…) can read their Open Graph tags. /login and /entrar additionally

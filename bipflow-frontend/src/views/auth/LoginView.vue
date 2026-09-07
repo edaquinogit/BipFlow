@@ -376,7 +376,7 @@ const handleBackToLogin = () => {
 
       <div class="pt-3">
         <AuthSubmitButton :disabled="!canSubmit" :loading="isLoading" loading-label="Entrando...">
-          Entrar no BipFlow
+          Entrar no Bip Flow
         </AuthSubmitButton>
       </div>
     </form>

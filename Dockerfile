@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     BIPFLOW_COMMIT_SHA=${BIPFLOW_COMMIT_SHA}
 
-LABEL org.opencontainers.image.source="https://github.com/edaquinogit/BipFlow-Manage" \
+LABEL org.opencontainers.image.source="https://github.com/edaquinogit/BipFlow" \
       org.opencontainers.image.revision="${BIPFLOW_COMMIT_SHA}" \
       org.opencontainers.image.title="BipFlow backend"
 

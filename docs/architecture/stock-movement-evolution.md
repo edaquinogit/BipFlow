@@ -1,7 +1,7 @@
 # Evolução de Gestão de Estoque (Entrada/Saída)
 
 Este documento descreve a estratégia para evoluir o controle de estoque do
-BipFlow Manage de um campo livremente editável (`Product.stock_quantity`,
+Bip Flow de um campo livremente editável (`Product.stock_quantity`,
 sem motivo ou histórico) para um controle de estoque com auditoria completa
 (entrada/saída com motivo, vinculado a quem fez a alteração). Segue o mesmo
 padrão de **etapas verticais** do `docs/architecture/multi-tenant-evolution.md`:

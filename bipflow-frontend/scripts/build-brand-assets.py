@@ -26,7 +26,7 @@ WHITE = (255, 255, 255, 255)
 INK = (15, 19, 26, 255)          # matches the dark cart, for the wordmark
 BRAND_PINK = (251, 1, 144, 255)  # #FB0190 -- sampled from the symbol body; theme-color
 
-WORDMARK = "BipFlow Manage"
+WORDMARK = "Bip Flow"
 
 
 def load_source() -> Image.Image:

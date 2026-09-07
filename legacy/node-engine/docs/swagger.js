@@ -10,7 +10,7 @@ const swaggerOptions = {
         'Documentacao do motor Node independente da raiz. O produto principal Django + Vue esta documentado em docs/api/reference.md.',
       contact: {
         name: 'Ednaldo Aquino',
-        url: 'https://github.com/edaquinogit/BipFlow-Manage',
+        url: 'https://github.com/edaquinogit/BipFlow',
       },
     },
     servers: [

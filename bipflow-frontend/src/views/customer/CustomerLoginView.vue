@@ -12,7 +12,7 @@ import { setSelectedStoreSlug } from '@/services/store-scope'
 import { isAxiosError } from '@/types/errors'
 
 // Customer authentication intentionally keeps its storefront language and
-// destination separate from the administrative BipFlow Manage login.
+// destination separate from the administrative Bip Flow login.
 const route = useRoute()
 const router = useRouter()
 const routeStoreSlug = typeof route.params?.storeSlug === 'string' ? route.params.storeSlug : ''
@@ -115,7 +115,7 @@ async function handleSubmit(): Promise<void> {
           <span class="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#e5e7eb] bg-white p-1 shadow-sm">
             <img src="/brand/bipflow-logo-auth.webp" alt="" class="h-full w-full object-contain" aria-hidden="true" />
           </span>
-          <span class="text-lg font-extrabold tracking-[-0.045em] text-[#05050a]">BipFlow</span>
+          <span class="text-lg font-extrabold tracking-[-0.045em] text-[#05050a]">Bip Flow</span>
         </div>
 
         <header class="mb-7 text-center">

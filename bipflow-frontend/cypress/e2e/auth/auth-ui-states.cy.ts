@@ -5,14 +5,14 @@ describe('Authentication UI states', () => {
     cy.viewport(390, 844)
     cy.visit('/login')
 
-    cy.get('[aria-label="Apresentação do BipFlow Manage"]').should('not.be.visible')
+    cy.get('[aria-label="Apresentação do Bip Flow"]').should('not.be.visible')
     cy.get('[data-cy="auth-brand-mark"]:visible')
       .should('have.length', 1)
       .find('.auth-brand-mark__speed-line')
       .should('have.length', 3)
     cy.contains('Entre na sua conta').should('be.visible')
     cy.contains('Use suas credenciais administrativas para continuar.').should('be.visible')
-    cy.contains('button', 'Entrar no BipFlow').click()
+    cy.contains('button', 'Entrar no Bip Flow').click()
 
     cy.contains('Informe seu email administrativo.').should('be.visible')
     cy.contains('Informe sua senha.').should('be.visible')
@@ -31,7 +31,7 @@ describe('Authentication UI states', () => {
 
     cy.get('#admin-email').should('have.css', 'font-size', '16px')
     cy.get('#admin-password').should('have.css', 'font-size', '16px')
-    cy.contains('button', 'Entrar no BipFlow').then(($button) => {
+    cy.contains('button', 'Entrar no Bip Flow').then(($button) => {
       expect($button[0].getBoundingClientRect().height, 'primary action height').to.be.at.least(44)
     })
     cy.document().then((doc) => {
@@ -63,7 +63,7 @@ describe('Authentication UI states', () => {
     cy.visit('/login')
     cy.get('#admin-email').type('admin@example.com')
     cy.get('#admin-password').type('senha-invalida')
-    cy.contains('button', 'Entrar no BipFlow').click()
+    cy.contains('button', 'Entrar no Bip Flow').click()
 
     cy.wait('@loginRequest')
     cy.get('[data-cy="login-error"]')

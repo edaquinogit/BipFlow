@@ -1,9 +1,23 @@
-# BipFlow Manage
+# Bip Flow
 
-Plataforma full-stack para pequenos negócios que precisam controlar catálogo,
-frete, pedidos e checkout via WhatsApp sem depender de planilhas ou mensagens
-soltas. O fluxo principal usa backend Django REST, frontend Vue 3 + TypeScript
-e checkout público com geração de pedido para WhatsApp.
+Plataforma SaaS full-stack multi-tenant para pequenos negócios que precisam
+controlar catálogo, estoque, frete, pedidos, PDV, vitrine digital e checkout
+via WhatsApp sem depender de planilhas ou mensagens soltas. O fluxo principal
+usa backend Django REST, frontend Vue 3 + TypeScript e checkout público com
+geração de pedido para WhatsApp.
+
+## Multi-tenant
+
+**Bip Flow** é a plataforma (o SaaS, o painel administrativo, o ecossistema
+multi-loja). Cada loja é um _tenant_ independente que usa o Bip Flow como
+infraestrutura: catálogo, estoque, pedidos, RBAC e vitrine própria, isolados
+por `store_id`.
+
+`Boutique Fitness`, por exemplo, é apenas uma loja cliente rodando sobre o
+Bip Flow — não é o produto. O login administrativo (`/login`) e os metadados
+globais apresentam **Bip Flow**; a vitrine de uma loja (`/l/<slug>/…`)
+apresenta o nome e a identidade daquela loja. As duas identidades nunca se
+misturam.
 
 ## Visão Rápida
 
@@ -188,7 +202,7 @@ de verdade.
 ## Estrutura
 
 ```text
-BipFlow-Manage/
+BipFlow/
 |-- bipdelivery/              # Backend canônico Django REST
 |-- bipflow-frontend/         # Frontend Vue 3
 |-- api-order-validation/     # Pacote isolado (avaliação Jitterbit)

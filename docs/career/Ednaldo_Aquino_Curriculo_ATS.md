@@ -11,7 +11,7 @@ GitHub: https://github.com/edaquinogit
 
 Desenvolvedor Full Stack Junior em formacao, com foco em backend Python,
 APIs REST, autenticacao, controle de acesso, testes automatizados e frontend
-Vue.js com TypeScript. Desenvolvi o BipFlow Manage, uma aplicacao full-stack
+Vue.js com TypeScript. Desenvolvi o Bip Flow, uma aplicacao full-stack
 para gestao de catalogo, frete, checkout via WhatsApp e historico de vendas,
 aplicando boas praticas de Clean Code, documentacao tecnica, validacao de dados
 e qualidade com testes. Busco primeira oportunidade formal em desenvolvimento
@@ -32,7 +32,7 @@ claro, testavel e bem documentado.
 
 ## Projetos
 
-### BipFlow Manage | Projeto Full Stack | 2025 - atual
+### Bip Flow | Projeto Full Stack | 2025 - atual
 
 Aplicacao full-stack para pequenos negocios controlarem catalogo, frete por
 regiao, pedidos e checkout via WhatsApp.

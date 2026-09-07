@@ -32,7 +32,7 @@ jobs:
       - name: Compute lowercase image names
         # GHCR (like all Docker registries) requires all-lowercase image
         # names; github.repository preserves the repo's actual case
-        # (edaquinogit/BipFlow-Manage), which is not lowercase here.
+        # (edaquinogit/BipFlow), which is not lowercase here.
         id: repo
         run: |
           repo_lower=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
