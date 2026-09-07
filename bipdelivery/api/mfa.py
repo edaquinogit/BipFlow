@@ -22,7 +22,10 @@ from django.core import signing
 MFA_CHALLENGE_SALT = "bipflow-mfa-challenge"
 MFA_CHALLENGE_MAX_AGE_SECONDS = 300
 
-ISSUER_NAME = "BipFlow Manage"
+# Authenticator-app label for newly provisioned TOTP entries. Changing it does
+# not affect already-enrolled users: verification uses only the shared secret,
+# and existing authenticator entries keep whatever label they were created with.
+ISSUER_NAME = "Bip Flow"
 
 
 def build_mfa_challenge_token(user_id: int, remember_me: bool = False) -> str:
