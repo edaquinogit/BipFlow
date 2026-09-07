@@ -17,8 +17,8 @@ cross-tenant isolation on update, and the one known silent no-op
 """
 import json
 from decimal import Decimal
-from unittest import expectedFailure
 
+import pytest
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
@@ -56,9 +56,10 @@ class ProductUpdatePersistenceReproTest(TestCase):
             category=self.category,
             store=self.store,
         )
-        self.user = User.objects.create_user(
-            username="mgr", password="x", is_staff=True
-        )
+        # A real dashboard manager: NOT is_staff (that flag is a platform-admin
+        # role no self-service flow grants). Write access comes from the
+        # StoreMembership role, exactly like production.
+        self.user = User.objects.create_user(username="mgr", password="x")
         StoreMembership.objects.create(
             store=self.store, user=self.user, role=StoreMembership.ROLE_MANAGER
         )
@@ -218,8 +219,8 @@ class ProductUpdatePersistenceReproTest(TestCase):
         )
         self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.content)
         self.product.refresh_from_db()
-        self.assertIn(self.product.size, ("", None))
-        self.assertIn(self._get_fresh().data["size"], ("", None))
+        self.assertEqual(self.product.size, "")
+        self.assertEqual(self._get_fresh().data["size"], "")
 
     def test_description_and_size_together_via_exact_frontend_shape(self):
         """The full multipart PATCH the dashboard sends when both free-text
@@ -241,21 +242,59 @@ class ProductUpdatePersistenceReproTest(TestCase):
         self.product.refresh_from_db()
         self.assertEqual(self.product.name, "Produto sem texto livre")
         self.assertEqual(self.product.description, "")
-        self.assertIn(self.product.size, ("", None))
+        self.assertEqual(self.product.size, "")
         got = self._get_fresh().data
         self.assertEqual(got["description"], "")
-        self.assertIn(got["size"], ("", None))
+        self.assertEqual(got["size"], "")
+
+    # ---- 4b. size semantics: never-filled vs untouched vs explicitly cleared
+    def test_size_never_filled_on_create_stays_null(self):
+        """The frontend omits an empty `size` on CREATE, so a product the
+        merchant never gave a size keeps NULL (JSON null), not ''."""
+        resp = self.client.post(
+            "/api/v1/products/",
+            data={
+                "name": "Sem tamanho",
+                "price": "5.00",
+                "stock_quantity": "1",
+                "category": self.category.id,
+                "low_stock_threshold": "",
+            },
+            format="multipart",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.content)
+        created = Product.objects.get(id=resp.data["id"])
+        self.assertIsNone(created.size)
+        self.assertIsNone(resp.data["size"])
+
+    def test_size_untouched_on_edit_is_left_alone(self):
+        """A PATCH that does not carry `size` must not change it."""
+        self.assertEqual(self.product.size, "P")
+        resp = self.client.patch(
+            self.url, data={"name": "So o nome mudou"}, format="multipart"
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.content)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.name, "So o nome mudou")
+        self.assertEqual(self.product.size, "P")
 
     # ---- 5. toggle is_available (status) --------------------------------
-    @expectedFailure  # KNOWN GAP, documented for separate authorization:
-    # Product.save() (models.py ~L327) unconditionally does
+    # KNOWN GAP, tracked for separate authorization (NOT touched by this
+    # branch's fix): Product.save() (models.py ~L327) unconditionally does
     #   self.is_available = self.stock_quantity > 0
-    # on every save, so `is_available` can never be set through the API. The
-    # PATCH returns 200 and even echoes the value the caller sent, but the DB
-    # keeps stock-derived availability. Today NO dashboard control writes
-    # is_available (productPayload.ts strips it; there is no toggle in the
-    # form or table), so this is latent rather than user-visible -- but it is
-    # a real silent-no-op and a fix touches load-bearing save() behaviour.
+    # on every save, so `is_available` can never be set through the API -- the
+    # PATCH returns 200 and echoes the value sent, but the DB keeps
+    # stock-derived availability. Latent today: NO dashboard control writes
+    # is_available (productPayload.ts strips it; no toggle in form or table).
+    # strict=True on purpose: the day save() stops forcing this, the
+    # assertion below starts passing and pytest fails the XPASS, forcing this
+    # test to be un-marked and turned into a real persistence assertion
+    # instead of silently rotting.
+    @pytest.mark.xfail(
+        reason="Product.save() forces is_available from stock_quantity; "
+        "no UI writes it yet -- see docs / separate security-or-feature branch",
+        strict=True,
+    )
     def test_is_available_toggle_is_silently_ignored(self):
         resp = self.client.patch(
             self.url, data={"is_available": False}, format="json"
