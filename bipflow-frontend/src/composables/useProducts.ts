@@ -76,10 +76,18 @@ export function useProducts() {
    * Omits null/undefined values to avoid sending unnecessary data.
    *
    * @param data Product data to convert
+   * @param options.partialUpdate When true (edit / PATCH), an emptied
+   *   free-text field (description, size) is sent as an explicit '' so the
+   *   backend clears it. On create it is omitted like every other empty
+   *   value, so a never-filled `size` keeps its NULL default instead of
+   *   becoming '' -- preserving the pre-existing create contract.
    * @returns FormData ready for API submission
    * @throws Error if image exceeds 2MB limit
    */
-  const _preparePayload = (data: Partial<Product>): FormData => {
+  const _preparePayload = (
+    data: Partial<Product>,
+    options: { partialUpdate?: boolean } = {},
+  ): FormData => {
     const formData = new FormData();
     const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
     const orderedExistingImages: Array<{ index: number; value: string }> = [];
@@ -100,10 +108,12 @@ export function useProducts() {
 
       // Free-text fields the edit form binds directly. Everywhere else an
       // empty value means "leave this field untouched" (partial update), but
-      // for these an empty input is a deliberate "clear it" -- dropping it
-      // here is why a wiped description/size silently reverted on reload.
-      // The backend already accepts '' for both (TextField/CharField blank).
-      if (key === "description" || key === "size") {
+      // on an edit an empty input is a deliberate "clear it" -- dropping it
+      // is why a wiped description/size silently reverted on reload. The
+      // backend already accepts '' for both (TextField/CharField blank). On
+      // create we still omit an empty value (falls through below), so a
+      // never-filled `size` keeps its NULL default.
+      if ((key === "description" || key === "size") && options.partialUpdate) {
         formData.append(key, value === null || value === undefined ? "" : String(value));
         return;
       }
@@ -456,7 +466,7 @@ export function useProducts() {
     loading.value = true;
     error.value = null;
     try {
-      const payload = _preparePayload(data);
+      const payload = _preparePayload(data, { partialUpdate: true });
       const updatedProduct = await ProductService.update(id, payload);
 
       products.value = products.value.map((p) =>

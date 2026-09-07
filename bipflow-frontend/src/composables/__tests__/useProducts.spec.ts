@@ -497,12 +497,13 @@ describe("useProducts Composable", () => {
 
   describe("clearable free-text payload handling", () => {
     /**
-     * Regression: an emptied description/size must reach the backend as ''
-     * so a partial update actually clears it. Dropping the key (the default
-     * for every other empty field) left the stale value in place -- the
-     * "I cleared it, saved, and it came back on reload" bug.
+     * Regression: on an EDIT an emptied description/size must reach the
+     * backend as '' so the partial update actually clears it (dropping the
+     * key left the stale value in place -- the "I cleared it, saved, and it
+     * came back on reload" bug). On CREATE an empty value is still omitted,
+     * so a never-filled `size` keeps its NULL default.
      */
-    it("sends an explicit empty string when the description is cleared", async () => {
+    it("update: sends an explicit empty string when description/size are cleared", async () => {
       const { updateProduct } = createComposable();
       const serviceSpy = vi.spyOn(ProductService, "update").mockResolvedValue({ id: 7 } as any);
 
@@ -515,7 +516,7 @@ describe("useProducts Composable", () => {
       expect(sentPayload.get("size")).toBe("");
     });
 
-    it("still sends a non-empty description/size unchanged", async () => {
+    it("update: sends a non-empty description/size unchanged", async () => {
       const { updateProduct } = createComposable();
       const serviceSpy = vi.spyOn(ProductService, "update").mockResolvedValue({ id: 8 } as any);
 
@@ -524,6 +525,46 @@ describe("useProducts Composable", () => {
       const sentPayload = serviceSpy.mock.calls[0]?.[1] as FormData;
       expect(sentPayload.get("description")).toBe("Nova desc");
       expect(sentPayload.get("size")).toBe("GG");
+    });
+
+    it("create: omits an empty description/size (never-filled size stays NULL)", async () => {
+      const { createProduct } = createComposable();
+      const serviceSpy = vi
+        .spyOn(ProductService, "create")
+        .mockResolvedValue({ id: 9, name: "Novo", image: null } as any);
+
+      await createProduct({
+        name: "Novo",
+        price: 10,
+        stock_quantity: 1,
+        category: 2,
+        description: "",
+        size: "",
+      } as any);
+
+      const sentPayload = serviceSpy.mock.calls[0]?.[0] as FormData;
+      expect(sentPayload.has("description"), "empty description omitted on create").toBe(false);
+      expect(sentPayload.has("size"), "empty size omitted on create -> backend NULL default").toBe(false);
+    });
+
+    it("create: still sends a non-empty description/size", async () => {
+      const { createProduct } = createComposable();
+      const serviceSpy = vi
+        .spyOn(ProductService, "create")
+        .mockResolvedValue({ id: 10, name: "Novo", image: null } as any);
+
+      await createProduct({
+        name: "Novo",
+        price: 10,
+        stock_quantity: 1,
+        category: 2,
+        description: "com texto",
+        size: "P",
+      } as any);
+
+      const sentPayload = serviceSpy.mock.calls[0]?.[0] as FormData;
+      expect(sentPayload.get("description")).toBe("com texto");
+      expect(sentPayload.get("size")).toBe("P");
     });
   });
 
