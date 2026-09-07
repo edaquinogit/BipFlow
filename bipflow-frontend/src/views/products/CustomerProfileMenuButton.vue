@@ -94,7 +94,7 @@ onBeforeUnmount(() => {
     <RouterLink
       v-if="authService.isAuthenticated() && hasProfile"
       :to="accountRoute"
-      class="storefront-outline-button inline-flex h-11 w-11 items-center justify-center rounded-xl border bg-white transition focus:outline-none focus:ring-2 focus:ring-[var(--store-primary-soft)]"
+      class="storefront-outline-button inline-flex h-11 w-11 items-center justify-center rounded-xl border bg-white transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--store-primary-soft)]"
       aria-label="Minha conta"
       title="Minha conta"
     >
@@ -104,7 +104,7 @@ onBeforeUnmount(() => {
     <button
       v-else
       type="button"
-      class="storefront-outline-button inline-flex h-11 w-11 items-center justify-center rounded-xl border bg-white transition focus:outline-none focus:ring-2 focus:ring-[var(--store-primary-soft)]"
+      class="storefront-outline-button inline-flex h-11 w-11 items-center justify-center rounded-xl border bg-white transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--store-primary-soft)]"
       aria-haspopup="menu"
       :aria-expanded="isMenuOpen"
       aria-label="Entrar ou criar perfil"

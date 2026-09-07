@@ -75,6 +75,28 @@ describe('CategoryNav', () => {
     expect(wrapper.get('[data-cy="storefront-category-chip-all"]').attributes('aria-pressed')).toBe('false');
   });
 
+  it('carries the selected-state class on exactly the active chip, never on the others', async () => {
+    const wrapper = mount(CategoryNav, {
+      props: {
+        categories: [buildCategory({ id: 1, name: 'Calcas' }), buildCategory({ id: 2, name: 'Botas' })],
+        activeCategoryId: undefined,
+      },
+    })
+
+    const classesOf = () => wrapper.findAll('button').map((b) => b.classes().includes('storefront-chip--on'))
+
+    // "Todos" active, the two categories are not.
+    expect(classesOf()).toEqual([true, false, false])
+
+    await wrapper.setProps({ activeCategoryId: 2 })
+    // Only "Botas" now; the previously-active "Todos" chip drops the class,
+    // so it can never keep rendering as selected (black-on-black) after a switch.
+    expect(classesOf()).toEqual([false, false, true])
+
+    await wrapper.setProps({ activeCategoryId: undefined })
+    expect(classesOf()).toEqual([true, false, false])
+  })
+
   it('emits select(undefined) for "Todos" and select(id) for a category', async () => {
     const wrapper = mount(CategoryNav, {
       props: { categories: [buildCategory({ id: 7, name: 'Acessorios' })], activeCategoryId: 7 },

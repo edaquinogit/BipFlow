@@ -905,6 +905,11 @@ function handleClearFilters(): void {
   draftCategoryId.value = undefined
   draftInStockOnly.value = false
   isFiltersOpen.value = false
+  // Same "close = hand focus back to the trigger" contract as the other two
+  // dismiss paths, so clearing from inside the sheet never drops focus to
+  // <body>. A no-op when this runs from the in-page "Limpar filtros" link
+  // (the sheet was never open, so no trigger was recorded).
+  restoreFocusToFiltersTrigger()
 }
 
 function handleGoToPage(pageNumber: number): void {

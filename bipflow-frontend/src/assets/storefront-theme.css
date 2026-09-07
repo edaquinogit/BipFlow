@@ -143,7 +143,18 @@
   transition-duration: var(--motion-base);
 }
 
-.storefront-primary-button:hover {
+/* Hover is a pointer-only affordance. On touch, mobile Safari never clears
+   `:hover` after a tap, so an un-guarded hover state "sticks" on the last
+   control the finger touched -- the bug this cycle fixes. `@media (hover:
+   hover)` keeps the effect for real mice/trackpads and drops it on phones. */
+@media (hover: hover) and (pointer: fine) {
+  .storefront-primary-button:hover {
+    border-color: var(--store-brand-strong, var(--store-primary-hover));
+    background: var(--store-brand-strong, var(--store-primary-hover));
+  }
+}
+
+.storefront-primary-button:active {
   border-color: var(--store-brand-strong, var(--store-primary-hover));
   background: var(--store-brand-strong, var(--store-primary-hover));
 }
@@ -198,9 +209,24 @@
     background-color var(--motion-fast);
 }
 
-.storefront-chip:hover {
-  color: var(--store-text);
-  border-color: var(--store-brand-on-light);
+/* Pointer-only hover (see the note on .storefront-primary-button above), and
+   scoped away from a selected chip: `:hover` (0,0,2,0) outranks the
+   `.storefront-chip--on` class (0,0,1,0), so an un-scoped hover used to
+   repaint a *selected* chip's label in --store-text over its own dark fill
+   -- black on black, the label vanished -- and that state stuck on touch. */
+@media (hover: hover) and (pointer: fine) {
+  .storefront-chip:not(.storefront-chip--on):hover {
+    color: var(--store-text);
+    border-color: var(--store-brand-on-light);
+  }
+}
+
+/* Press feedback for an unselected chip: brief, subtle, self-clearing the
+   instant the finger lifts -- never the full dark fill, which would read as
+   "selected". */
+.storefront-chip:not(.storefront-chip--on):active {
+  background: color-mix(in srgb, var(--store-text) 6%, var(--store-surface));
+  border-color: color-mix(in srgb, var(--store-text) 24%, transparent);
 }
 
 .storefront-chip--on {
@@ -263,15 +289,37 @@
     background-color var(--motion-fast);
 }
 
-.storefront-icon-btn:hover {
-  color: var(--store-brand-on-light);
-  border-color: var(--store-brand-on-light);
+/* Pointer-only hover (see .storefront-primary-button). On touch the browser's
+   own focus ring also lingers on the tapped <button> -- suppressed for
+   pointer/touch by the `:focus:not(:focus-visible)` reset in main.css, while
+   keyboard focus keeps a visible outline. */
+@media (hover: hover) and (pointer: fine) {
+  .storefront-icon-btn:hover {
+    color: var(--store-brand-on-light);
+    border-color: var(--store-brand-on-light);
+  }
 }
 
-.storefront-outline-button:hover {
-  /* Brand-as-text, contrast-checked against the light surface. */
+/* Short, gentle press feedback for the close / filter / share controls --
+   a soft tint that clears the moment the tap ends, so the X on the filter
+   sheet no longer flashes a hard dark silhouette. */
+.storefront-icon-btn:active {
+  background: color-mix(in srgb, var(--store-text) 7%, var(--store-surface));
+  border-color: color-mix(in srgb, var(--store-text) 24%, transparent);
+  color: var(--store-text);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .storefront-outline-button:hover {
+    /* Brand-as-text, contrast-checked against the light surface. */
+    border-color: var(--store-brand-on-light, var(--store-accent));
+    color: var(--store-brand-on-light, var(--store-accent));
+  }
+}
+
+.storefront-outline-button:active {
   border-color: var(--store-brand-on-light, var(--store-accent));
-  color: var(--store-brand-on-light, var(--store-accent));
+  background: color-mix(in srgb, var(--store-text) 5%, var(--store-surface));
 }
 
 .storefront-shell .hero-display-title {
