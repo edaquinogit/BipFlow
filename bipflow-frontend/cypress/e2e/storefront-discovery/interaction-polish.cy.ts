@@ -3,19 +3,20 @@
  * Storefront interaction-polish cycle -- mobile, against the real backend and
  * the real store "default". Proves three regressions stay fixed:
  *
- *  1. Header stability -- tapping the account / cart / search controls never
- *     costs the store its name and never resizes or shifts the header.
- *  2. Chip / control tap states never "stick" -- on a real touch viewport a
- *     just-tapped chip does not keep a dark press/hover fill, and a *selected*
- *     chip keeps a readable label (the :hover rule used to outrank
- *     .storefront-chip--on and paint the label in the fill colour -> invisible).
+ *  1. Header stability -- tapping the account / cart / search / filter controls
+ *     never costs the store its name and never resizes or shifts the header.
+ *  2. Chip / control tap states never "stick" dark -- a just-tapped or
+ *     just-deselected chip never keeps a dark fill, and a *selected* chip keeps
+ *     a readable label (the :hover rule used to outrank .storefront-chip--on and
+ *     paint the label in the fill colour -> invisible). A brief light press
+ *     tint is allowed; a dark one is not.
  *  3. The filters bottom sheet leaves nothing behind -- closing it by the X
  *     removes the dialog node, unlocks body scroll and returns focus to the
  *     trigger, even after repeated open/close.
  *
- * These are CSS-and-DOM behaviours, so they can only be verified in a real
- * browser at a real touch viewport -- jsdom unit tests cover the class-binding
- * and state side (CategoryNav.spec / ProductsView.spec).
+ * These are CSS-and-DOM behaviours, only verifiable in a real browser at a real
+ * touch viewport -- jsdom unit tests cover the class-binding / state side
+ * (CategoryNav.spec / ProductsView.spec).
  */
 
 const MOBILE_VIEWPORTS: Array<[number, number, string]> = [
@@ -25,7 +26,12 @@ const MOBILE_VIEWPORTS: Array<[number, number, string]> = [
   [430, 932, '430x932'],
 ]
 
+// The store-name element is the last <span> in the brand lockup (the first span
+// is the logo / initials wrapper). Bug #1 is about this span never collapsing.
+const brandNameSpan = () => cy.get('.storefront-header .storefront-brand').first().find('span').last()
+
 function visitStorefront(): void {
+  cy.intercept('GET', '**/v1/store/current/').as('storeCurrent')
   cy.visit('/l/default/produtos', {
     onBeforeLoad(win) {
       const realMatchMedia = win.matchMedia.bind(win)
@@ -46,7 +52,18 @@ function visitStorefront(): void {
       })
     },
   })
+  cy.wait('@storeCurrent')
   cy.get('[data-cy="storefront-category-nav"]', { timeout: 15000 }).should('exist')
+  // The header binds the store name off `selectedStore`, which is null on the
+  // first paint and only resolves once the request above lands + Vue reacts.
+  // Wait that out so tests read the real name, not the "Sua loja" fallback.
+  brandNameSpan()
+    .should('be.visible')
+    .should(($span) => {
+      const text = $span.text().trim()
+      expect(text.length, 'store name resolved').to.be.greaterThan(2)
+      expect(text, 'store name is not the generic fallback').not.to.eq('Sua loja')
+    })
 }
 
 function rgbChannels(value: string): [number, number, number] {
@@ -55,16 +72,15 @@ function rgbChannels(value: string): [number, number, number] {
   return [r, g, b]
 }
 
+function isDark(value: string): boolean {
+  return rgbChannels(value).every((channel) => channel <= 60)
+}
+
 function colourDistance(a: string, b: string): number {
   const [ar, ag, ab] = rgbChannels(a)
   const [br, bg, bb] = rgbChannels(b)
   return Math.abs(ar - br) + Math.abs(ag - bg) + Math.abs(ab - bb)
 }
-
-// The store-name element is the last <span> in the brand lockup (the first
-// span is the logo / initials wrapper). Bug #1 is about this span never
-// collapsing to nothing when a header control is tapped.
-const brandNameSpan = () => cy.get('.storefront-header .storefront-brand').first().find('span').last()
 
 describe('Storefront mobile interaction polish', () => {
   for (const [width, height, label] of MOBILE_VIEWPORTS) {
@@ -73,20 +89,25 @@ describe('Storefront mobile interaction polish', () => {
       visitStorefront()
 
       let storeName = ''
-      brandNameSpan().should('be.visible').invoke('text').then((text) => {
+      brandNameSpan().invoke('text').then((text) => {
         storeName = text.trim()
         expect(storeName.length, 'a real store name renders on load').to.be.greaterThan(2)
+        expect(storeName).not.to.eq('Sua loja')
       })
 
       cy.get('.storefront-header').first().then(($header) => {
         const initialHeight = $header[0].getBoundingClientRect().height
 
         const assertNameIntact = () => {
-          brandNameSpan().then(($span) => {
-            expect($span[0].getBoundingClientRect().width, 'name never collapses to 0 width').to.be.greaterThan(8)
-            expect($span.text()).to.contain(storeName)
+          // .should(cb) retries: a header control tap can kick a catalog
+          // re-fetch that momentarily blanks `selectedStore` (pre-existing
+          // behaviour). What must hold is that the name never collapses and
+          // always settles back to the real store name.
+          brandNameSpan().should(($span) => {
+            expect($span[0].getBoundingClientRect().width, 'name never collapses to ~0 width').to.be.greaterThan(8)
+            expect($span.text().trim(), 'name resolves back to the real store name').to.eq(storeName)
           })
-          cy.get('.storefront-header').first().then(($h) => {
+          cy.get('.storefront-header').first().should(($h) => {
             expect(
               Math.abs($h[0].getBoundingClientRect().height - initialHeight),
               'header height unchanged',
@@ -112,23 +133,14 @@ describe('Storefront mobile interaction polish', () => {
         cy.get('[aria-label="Fechar filtros"]').click()
         assertNameIntact()
 
-        // Search field focus + type + clear. (The store name may briefly show
-        // its generic fallback while the catalog re-fetches -- that is a
-        // pre-existing store-refetch behaviour, not this cycle's concern -- so
-        // assertNameIntact only requires the name never collapses, and it
-        // reappears in full once things settle.)
+        // Search field focus + type + clear, then repeated header taps.
         cy.get('input[aria-label="Buscar produtos por nome"]').click().type('a')
         cy.get('input[aria-label="Buscar produtos por nome"]').clear()
-        brandNameSpan().should('be.visible').and(($s) => {
-          expect($s[0].getBoundingClientRect().width).to.be.greaterThan(8)
-        })
-        brandNameSpan().should('contain.text', storeName)
-
-        // Repeated taps on the same control must not accumulate any shift.
         cy.get('[aria-label="Entrar ou criar perfil"]').click().click()
         cy.get('body').click(5, 5)
         cy.get('[data-cy="open-cart-button"]').click()
         cy.get('[aria-label="Fechar carrinho"]').click()
+        cy.get('[role="dialog"]').should('not.exist')
         assertNameIntact()
       })
 
@@ -141,50 +153,59 @@ describe('Storefront mobile interaction polish', () => {
     })
   }
 
-  it('a selected category chip keeps a readable label and unselected chips never stay dark', () => {
+  it('a selected category chip keeps a readable label and no chip ever stays dark after a tap', () => {
     cy.viewport(390, 844)
     visitStorefront()
 
-    cy.get('[data-cy="storefront-category-nav"] [data-cy="storefront-category-chip"]')
-      .first()
-      .as('chip')
+    const chips = () =>
+      cy.get('[data-cy="storefront-category-nav"] [data-cy="storefront-category-chip"]')
 
-    // Tap to select, then move the touch elsewhere (a real fingertip lifts).
-    cy.get('@chip').click({ force: true })
-    cy.get('@chip').should('have.attr', 'aria-pressed', 'true')
+    chips().first().as('chipA')
+    chips().eq(1).as('chipB')
+
+    // Select chip A, lift the touch elsewhere, let any press transition settle.
+    cy.get('@chipA').click({ force: true })
+    cy.get('@chipA').should('have.attr', 'aria-pressed', 'true')
     cy.get('body').click(5, 5)
+    cy.wait(300)
 
-    cy.get('@chip').then(($chip) => {
+    cy.get('@chipA').should(($chip) => {
       const style = getComputedStyle($chip[0])
-      // Bug #2: :hover used to repaint the label in the fill colour on a
-      // selected chip -> black on black. The label must stay legible.
+      // A selected chip's fill is dark by design -- but its label must NOT be
+      // (bug #2: :hover repainted the label in the fill colour -> black on black).
+      expect(isDark(style.backgroundColor), 'selected chip fill is the dark brand colour').to.eq(true)
+      expect(isDark(style.color), 'selected chip label is NOT dark on dark').to.eq(false)
       expect(
         colourDistance(style.color, style.backgroundColor),
-        'selected chip: label colour is clearly different from its fill',
+        'selected chip: label clearly contrasts its fill',
       ).to.be.greaterThan(120)
     })
 
-    // Every *unselected* chip is back to the surface fill -- no stuck dark
-    // press/hover state.
-    cy.get('[data-cy="storefront-category-nav"] [data-cy="storefront-category-chip"]').each(($el) => {
+    // No un-selected chip is left with a dark fill.
+    chips().each(($el) => {
       if ($el.attr('aria-pressed') === 'true') return
-      const style = getComputedStyle($el[0])
-      expect(style.backgroundColor, 'unselected chip has no dark fill').to.match(
-        /rgba?\(\s*255,\s*255,\s*255/,
-      )
+      cy.wrap($el).should(($chip) => {
+        expect(
+          isDark(getComputedStyle($chip[0]).backgroundColor),
+          `unselected chip "${$chip.text().trim()}" is not dark`,
+        ).to.eq(false)
+      })
     })
 
-    // Switching category hands the "selected" look over cleanly -- the old
-    // chip does not keep rendering as active.
-    cy.get('[data-cy="storefront-category-nav"] [data-cy="storefront-category-chip"]')
-      .eq(1)
-      .click({ force: true })
+    // Switch to chip B: the selected look moves over, chip A goes back to a
+    // light, un-selected fill (never keeps the dark pill).
+    cy.get('@chipB').click({ force: true })
     cy.get('body').click(5, 5)
-    cy.get('@chip').should('have.attr', 'aria-pressed', 'false')
-    cy.get('@chip').then(($chip) => {
-      expect(getComputedStyle($chip[0]).backgroundColor, 'previous chip reverted').to.match(
-        /rgba?\(\s*255,\s*255,\s*255/,
-      )
+    cy.wait(300)
+    cy.get('@chipA').should('have.attr', 'aria-pressed', 'false')
+    cy.get('@chipA').should(($chip) => {
+      expect(
+        isDark(getComputedStyle($chip[0]).backgroundColor),
+        'previously-selected chip is no longer dark',
+      ).to.eq(false)
+    })
+    cy.get('@chipB').should(($chip) => {
+      expect(isDark(getComputedStyle($chip[0]).color), 'new selected chip label is readable').to.eq(false)
     })
   })
 
@@ -206,7 +227,7 @@ describe('Storefront mobile interaction polish', () => {
         .and('be.focused')
     }
 
-    // Backdrop dismiss and "Ver resultados" leave the same clean slate.
+    // "Ver resultados" leaves the same clean slate.
     cy.get('[aria-label="Abrir filtros"]').click()
     cy.contains('[role="dialog"] button', 'Ver resultados').click()
     cy.get('[role="dialog"]').should('not.exist')
