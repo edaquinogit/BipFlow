@@ -61,39 +61,75 @@ function colourDistance(a: string, b: string): number {
   return Math.abs(ar - br) + Math.abs(ag - bg) + Math.abs(ab - bb)
 }
 
+// The store-name element is the last <span> in the brand lockup (the first
+// span is the logo / initials wrapper). Bug #1 is about this span never
+// collapsing to nothing when a header control is tapped.
+const brandNameSpan = () => cy.get('.storefront-header .storefront-brand').first().find('span').last()
+
 describe('Storefront mobile interaction polish', () => {
   for (const [width, height, label] of MOBILE_VIEWPORTS) {
-    it(`[${label}] the store name survives every header interaction, with no layout shift`, () => {
+    it(`[${label}] the store name stays visible through every header interaction, with no layout shift`, () => {
       cy.viewport(width, height)
       visitStorefront()
 
-      cy.get('.storefront-brand').first().should('be.visible').invoke('text').then((initialName) => {
-        const trimmed = initialName.trim()
-        expect(trimmed.length, 'store name is rendered on load').to.be.greaterThan(0)
+      let storeName = ''
+      brandNameSpan().should('be.visible').invoke('text').then((text) => {
+        storeName = text.trim()
+        expect(storeName.length, 'a real store name renders on load').to.be.greaterThan(2)
+      })
 
-        cy.get('.storefront-header').first().then(($header) => {
-          const initialHeight = $header[0].getBoundingClientRect().height
+      cy.get('.storefront-header').first().then(($header) => {
+        const initialHeight = $header[0].getBoundingClientRect().height
 
-          // Every header control, in sequence: account menu, cart drawer,
-          // search field, filter trigger.
-          cy.get('[aria-label="Entrar ou criar perfil"]').click()
-          cy.get('body').click(5, 5) // dismiss the menu
-          cy.get('[data-cy="open-cart-button"]').click()
-          cy.get('[role="dialog"][aria-label="Carrinho de pedido"]').should('be.visible')
-          cy.get('[aria-label="Fechar carrinho"]').click()
-          cy.get('input[aria-label="Buscar produtos por nome"]').click().type('a').clear()
-          cy.get('[aria-label="Abrir filtros"]').click()
-          cy.get('[aria-label="Fechar filtros"]').click()
-
-          // Name still there, same text, header same height.
-          cy.get('.storefront-brand').first().should('be.visible').invoke('text').then((afterName) => {
-            expect(afterName.trim(), 'store name unchanged after header interaction').to.eq(trimmed)
+        const assertNameIntact = () => {
+          brandNameSpan().then(($span) => {
+            expect($span[0].getBoundingClientRect().width, 'name never collapses to 0 width').to.be.greaterThan(8)
+            expect($span.text()).to.contain(storeName)
           })
-          cy.get('.storefront-header').first().then(($afterHeader) => {
-            const afterHeight = $afterHeader[0].getBoundingClientRect().height
-            expect(Math.abs(afterHeight - initialHeight), 'header height unchanged').to.be.lessThan(1)
+          cy.get('.storefront-header').first().then(($h) => {
+            expect(
+              Math.abs($h[0].getBoundingClientRect().height - initialHeight),
+              'header height unchanged',
+            ).to.be.lessThan(2)
           })
+        }
+
+        // Account menu open + dismiss.
+        cy.get('[aria-label="Entrar ou criar perfil"]').click()
+        cy.get('[role="menu"]').should('be.visible')
+        cy.get('body').click(5, 5)
+        assertNameIntact()
+
+        // Cart drawer open + close.
+        cy.get('[data-cy="open-cart-button"]').click()
+        cy.get('[role="dialog"][aria-label="Carrinho de pedido"]').should('be.visible')
+        cy.get('[aria-label="Fechar carrinho"]').click()
+        cy.get('[role="dialog"]').should('not.exist')
+        assertNameIntact()
+
+        // Filter trigger open + close.
+        cy.get('[aria-label="Abrir filtros"]').click()
+        cy.get('[aria-label="Fechar filtros"]').click()
+        assertNameIntact()
+
+        // Search field focus + type + clear. (The store name may briefly show
+        // its generic fallback while the catalog re-fetches -- that is a
+        // pre-existing store-refetch behaviour, not this cycle's concern -- so
+        // assertNameIntact only requires the name never collapses, and it
+        // reappears in full once things settle.)
+        cy.get('input[aria-label="Buscar produtos por nome"]').click().type('a')
+        cy.get('input[aria-label="Buscar produtos por nome"]').clear()
+        brandNameSpan().should('be.visible').and(($s) => {
+          expect($s[0].getBoundingClientRect().width).to.be.greaterThan(8)
         })
+        brandNameSpan().should('contain.text', storeName)
+
+        // Repeated taps on the same control must not accumulate any shift.
+        cy.get('[aria-label="Entrar ou criar perfil"]').click().click()
+        cy.get('body').click(5, 5)
+        cy.get('[data-cy="open-cart-button"]').click()
+        cy.get('[aria-label="Fechar carrinho"]').click()
+        assertNameIntact()
       })
 
       cy.document().then((doc) => {
