@@ -283,7 +283,7 @@ const handleBackToLogin = () => {
       <p class="mb-2 text-[11px] font-extrabold uppercase tracking-[0.22em] text-[#d60073]">
         {{ mfaToken ? 'Verificação adicional' : 'Acesso seguro' }}
       </p>
-      <h2 class="text-[2rem] font-extrabold tracking-[-0.045em] text-bip-black">
+      <h2 class="text-[1.75rem] font-extrabold tracking-[-0.045em] text-bip-black sm:text-[2rem]">
         {{ mfaToken ? 'Verificação em duas etapas' : 'Entre na sua conta' }}
       </h2>
       <p class="mt-2 text-sm leading-6 text-bip-muted">

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AuthBrandMark from '@/components/auth/AuthBrandMark.vue'
+
 defineProps<{
   eyebrow: string
   title: string
@@ -33,7 +35,7 @@ const year = new Date().getFullYear()
 
       <div class="relative z-10 flex items-center gap-3.5">
         <span class="auth-logo-frame auth-logo-frame--dark">
-          <img src="/brand/bipflow-logo-auth.webp" alt="" class="h-full w-full object-contain" aria-hidden="true" />
+          <AuthBrandMark />
         </span>
         <span class="auth-wordmark auth-wordmark--dark">BipFlow Manage</span>
       </div>
@@ -60,11 +62,11 @@ const year = new Date().getFullYear()
       </div>
     </section>
 
-    <section class="auth-form-panel flex min-h-screen min-h-dvh items-center justify-center px-4 py-8 sm:px-8 sm:py-12 lg:px-10 xl:px-16">
+    <section class="auth-form-panel flex min-h-screen min-h-dvh flex-col items-center justify-start px-6 sm:px-8 lg:justify-center lg:px-10 xl:px-16">
       <div class="w-full max-w-[28rem]">
         <div class="mb-9 flex items-center gap-3 lg:hidden">
           <span class="auth-logo-frame auth-logo-frame--light">
-            <img src="/brand/bipflow-logo-auth.webp" alt="" class="h-full w-full object-contain" aria-hidden="true" />
+            <AuthBrandMark />
           </span>
           <span class="auth-wordmark auth-wordmark--light">BipFlow Manage</span>
         </div>
@@ -91,6 +93,17 @@ const year = new Date().getFullYear()
   background:
     radial-gradient(circle at 96% 0%, rgba(255, 0, 140, 0.035), transparent 22rem),
     #fafafa;
+  /* Mobile: content starts at the top, clear of the notch and the home
+     indicator / on-screen keyboard. Re-centred vertically from lg up. */
+  padding-top: calc(2rem + env(safe-area-inset-top));
+  padding-bottom: calc(2rem + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 1024px) {
+  .auth-form-panel {
+    padding-top: 3rem;
+    padding-bottom: 3rem;
+  }
 }
 
 .auth-brand-grid {

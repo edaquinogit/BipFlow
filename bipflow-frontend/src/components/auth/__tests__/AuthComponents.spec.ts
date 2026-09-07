@@ -1,10 +1,69 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import AuthAlert from '@/components/auth/AuthAlert.vue'
+import AuthBrandMark from '@/components/auth/AuthBrandMark.vue'
 import AuthField from '@/components/auth/AuthField.vue'
+import AuthShell from '@/components/auth/AuthShell.vue'
 import AuthSubmitButton from '@/components/auth/AuthSubmitButton.vue'
 
+const brandMarkSource = readFileSync(
+  resolve(__dirname, '..', 'AuthBrandMark.vue'),
+  'utf8',
+)
+
 describe('auth components', () => {
+  it('renders the official mark with exactly three decorative bars, fully hidden from AT', () => {
+    const wrapper = mount(AuthBrandMark)
+
+    const img = wrapper.get('img')
+    expect(img.attributes('src')).toBe('/brand/bipflow-logo-auth.webp')
+    expect(img.attributes('alt')).toBe('')
+
+    expect(wrapper.attributes('aria-hidden')).toBe('true')
+    expect(wrapper.attributes('data-cy')).toBe('auth-brand-mark')
+    expect(wrapper.findAll('.auth-brand-mark__bar')).toHaveLength(3)
+  })
+
+  it('uses the animated brand mark in both the desktop panel and the mobile header', () => {
+    const wrapper = mount(AuthShell, {
+      props: { eyebrow: 'x', title: 'y', description: 'z' },
+      slots: { default: '<p>form</p>' },
+    })
+
+    // one in the lg brand panel, one in the lg:hidden mobile header
+    expect(wrapper.findAllComponents(AuthBrandMark).length).toBe(2)
+    // the raw <img> brand references are gone -- only the component renders it
+    const brandImgs = wrapper
+      .findAll('img')
+      .filter((i) => i.attributes('src') === '/brand/bipflow-logo-auth.webp')
+    expect(brandImgs.length).toBe(2)
+  })
+
+  it('brand mark animates only transform/opacity, 4.6s, staggered, and stops for prefers-reduced-motion', () => {
+    // spacing collapses in the compiled output, so match on tokens not whitespace
+    const css = brandMarkSource.replace(/\s+/g, ' ')
+
+    expect(css).toMatch(/animation:\s*auth-brand-bar-drift 4\.6s cubic-bezier\(0\.22, ?1, ?0\.36, ?1\) infinite/)
+    expect(css).toContain('animation-delay: 0ms')
+    expect(css).toContain('animation-delay: 180ms')
+    expect(css).toContain('animation-delay: 360ms')
+
+    // the keyframes touch only transform + opacity -- never a box-model prop
+    const keyframes = brandMarkSource.slice(
+      brandMarkSource.indexOf('@keyframes auth-brand-bar-drift'),
+      brandMarkSource.indexOf('@media'),
+    )
+    expect(keyframes).toMatch(/transform:/)
+    expect(keyframes).toMatch(/opacity:/)
+    expect(keyframes).not.toMatch(/\b(width|height|margin|padding|top|left|right|bottom|inset)\s*:/)
+
+    const reduced = brandMarkSource.slice(brandMarkSource.indexOf('@media (prefers-reduced-motion: reduce)'))
+    expect(reduced).toContain('.auth-brand-mark__bar')
+    expect(reduced).toMatch(/animation:\s*none/)
+  })
+
   it('connects the field label, error and input accessibility state', async () => {
     const wrapper = mount(AuthField, {
       props: {
