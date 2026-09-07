@@ -1,4 +1,4 @@
-# BipFlow Manage — Authentication UX Specification v2
+# Bip Flow — Authentication UX Specification v2
 
 ## Status
 
@@ -8,9 +8,9 @@ Referência visual aprovada e implementada para o login administrativo. Esta ver
 
 - Desktop com painel institucional escuro à esquerda e formulário claro à direita.
 - Mensagem principal: **Sua operação, sob controle total.**
-- Formulário com o título **Entre na sua conta** e CTA **Entrar no BipFlow**.
+- Formulário com o título **Entre na sua conta** e CTA **Entrar no Bip Flow**.
 - Grade, órbitas e ondas discretas, com contraste alto e baixa interferência visual.
-- Logo oficial do BipFlow preservada, sem redesenho ou alteração do símbolo.
+- Logo oficial do Bip Flow preservada, sem redesenho ou alteração do símbolo.
 - As três barras rosas recebem movimento suave e independente para reforçar velocidade e fluxo.
 
 ## Movimento da marca

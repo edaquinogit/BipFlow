@@ -1,7 +1,7 @@
 # Auditoria de evolucao e prontidao de producao - 2026-08-14
 
 Este documento registra a sessao de correcao, validacao e endurecimento do
-BipFlow Manage para uso real em uma operacao pequena com vendas fisicas e
+Bip Flow para uso real em uma operacao pequena com vendas fisicas e
 online.
 
 ## Escopo auditado

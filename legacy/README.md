@@ -1,7 +1,7 @@
 # Legacy (Arquivado)
 
 Esta pasta guarda código **descontinuado** que **não faz parte do runtime
-canônico** do BipFlow Manage. O runtime atual é:
+canônico** do Bip Flow. O runtime atual é:
 
 - **Backend:** Django REST em [`bipdelivery/`](../bipdelivery)
 - **Frontend:** Vue 3 + TypeScript em [`bipflow-frontend/`](../bipflow-frontend)

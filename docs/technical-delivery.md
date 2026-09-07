@@ -1,6 +1,6 @@
 # Entrega Tecnica Para Avaliacao
 
-Este documento resume o que foi entregue no BipFlow Manage para leitura de
+Este documento resume o que foi entregue no Bip Flow para leitura de
 tech lead, avaliador tecnico ou recrutador tecnico. Ele complementa o README
 principal com foco em escopo, evidencias, comandos de validacao, decisoes e
 limites conhecidos.

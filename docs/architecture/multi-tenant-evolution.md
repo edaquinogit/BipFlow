@@ -1,6 +1,6 @@
 # Evolução Multi-Loja (Multi-Tenant)
 
-Este documento registra a estratégia usada para evoluir o BipFlow Manage de
+Este documento registra a estratégia usada para evoluir o Bip Flow de
 **single-tenant** (uma loja por instância) para **multi-loja** (várias lojas
 isoladas na mesma instância). Ele continua como histórico/roadmap técnico da
 evolução; a visão operacional atual fica em
