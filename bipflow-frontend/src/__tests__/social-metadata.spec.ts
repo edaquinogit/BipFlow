@@ -44,10 +44,16 @@ function link(html: string, rel: string, extra = ''): string | null {
 }
 
 describe('social metadata — crawler-visible <head> in index.html', () => {
-  it('has a BipFlow Manage title and description (no stale store name)', () => {
+  it('has a Bip Flow title and description (platform brand, no stale store name, no "Manage")', () => {
     const title = indexHtml.match(/<title>([^<]*)<\/title>/i)?.[1] ?? ''
-    expect(title).toBe('BipFlow Manage — Gestão multiloja e vitrine digital')
+    expect(title).toBe('Bip Flow — Gestão multiloja e vitrine digital')
+    // Boutique Fitness is a tenant, never the platform brand in the global <head>.
     expect(indexHtml).not.toMatch(/KN Boutique|Boutique Fitness/)
+    // The product is "Bip Flow" now — the retired "BipFlow Manage" / "… Manage"
+    // wordmark must not survive anywhere in the crawler-visible document.
+    const head = indexHtml.slice(0, indexHtml.indexOf('</head>'))
+    expect(head).not.toMatch(/BipFlow Manage|Bip Flow Manage|\bManage\b/)
+    expect(head).toMatch(/Bip Flow/)
     expect(meta(indexHtml, 'name', 'description')).toBe(SOCIAL_DESCRIPTION)
   })
 
@@ -74,8 +80,8 @@ describe('social metadata — crawler-visible <head> in index.html', () => {
   it('declares every required Open Graph tag with absolute URLs', () => {
     const og = {
       'og:type': 'website',
-      'og:site_name': 'BipFlow Manage',
-      'og:title': 'BipFlow Manage — Gestão multiloja e vitrine digital',
+      'og:site_name': 'Bip Flow',
+      'og:title': 'Bip Flow — Gestão multiloja e vitrine digital',
       'og:description': SOCIAL_DESCRIPTION,
       'og:url': `${CANONICAL_ORIGIN}/`,
       'og:image': `${CANONICAL_ORIGIN}/brand/bipflow-og.png`,
@@ -152,9 +158,9 @@ describe('social metadata — asset files exist and match their declarations', (
     expect(pngSize(p)).toEqual({ width: n, height: n })
   })
 
-  it('site.webmanifest is valid JSON naming BipFlow with 192 & 512 icons', () => {
+  it('site.webmanifest is valid JSON naming Bip Flow with 192 & 512 icons', () => {
     const m = JSON.parse(readFileSync(resolve(PUBLIC, 'site.webmanifest'), 'utf8'))
-    expect(m.name).toMatch(/BipFlow/)
+    expect(m.name).toMatch(/Bip ?Flow/)
     const sizes = (m.icons ?? []).map((i: { sizes: string }) => i.sizes)
     expect(sizes).toEqual(expect.arrayContaining(['192x192', '512x512']))
     expect(JSON.stringify(m)).not.toMatch(/localhost|127\.0\.0\.1/)

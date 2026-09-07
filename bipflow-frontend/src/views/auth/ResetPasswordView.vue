@@ -114,7 +114,7 @@ const handlePasswordResetConfirm = async () => {
   <AuthShell
     eyebrow="Nova senha"
     title="Defina uma senha forte e exclusiva."
-    description="Uma senha exclusiva para o BipFlow Manage protege o acesso administrativo da sua loja."
+    description="Uma senha exclusiva para o Bip Flow protege o acesso administrativo da sua loja."
   >
     <header class="mb-7">
       <p class="mb-2 text-[11px] font-extrabold uppercase tracking-[0.22em] text-[#d60073]">Proteção da conta</p>
@@ -131,7 +131,7 @@ const handlePasswordResetConfirm = async () => {
           :to="{ name: AuthRouteNames.Login }"
           class="inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-[#111827] px-4 font-semibold text-white transition-colors hover:bg-bip-black focus-visible:ring-2 focus-visible:ring-bip-black focus-visible:ring-offset-2"
         >
-          Entrar no BipFlow
+          Entrar no Bip Flow
         </RouterLink>
       </template>
     </AuthAlert>

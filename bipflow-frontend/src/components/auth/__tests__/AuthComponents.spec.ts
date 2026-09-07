@@ -93,7 +93,7 @@ describe('auth components', () => {
   it('blocks repeated submit while loading and keeps a clear label', () => {
     const wrapper = mount(AuthSubmitButton, {
       props: { loading: true, loadingLabel: 'Entrando...' },
-      slots: { default: 'Entrar no BipFlow' },
+      slots: { default: 'Entrar no Bip Flow' },
     })
 
     expect(wrapper.get('button').attributes('disabled')).toBeDefined()

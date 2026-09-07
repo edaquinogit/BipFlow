@@ -14,7 +14,7 @@ const year = new Date().getFullYear()
   <main class="grid min-h-screen min-h-dvh bg-bip-soft lg:grid-cols-[minmax(0,1.08fr)_minmax(30rem,0.92fr)]">
     <section
       class="auth-brand-panel relative hidden min-h-screen min-h-dvh flex-col justify-between overflow-hidden px-12 py-10 lg:flex xl:px-16 xl:py-12"
-      aria-label="Apresentação do BipFlow Manage"
+      aria-label="Apresentação do Bip Flow"
     >
       <div class="auth-brand-grid" aria-hidden="true" />
       <div class="auth-brand-orbit auth-brand-orbit--large" aria-hidden="true" />
@@ -37,7 +37,7 @@ const year = new Date().getFullYear()
         <span class="auth-logo-frame auth-logo-frame--dark">
           <AuthBrandMark />
         </span>
-        <span class="auth-wordmark auth-wordmark--dark">BipFlow Manage</span>
+        <span class="auth-wordmark auth-wordmark--dark">Bip Flow</span>
       </div>
 
       <div class="relative z-10 max-w-xl pb-8">
@@ -57,7 +57,7 @@ const year = new Date().getFullYear()
       </div>
 
       <div class="relative z-10 flex items-center justify-between gap-4 border-t border-white/10 pt-5 text-xs text-zinc-500">
-        <p>&copy; {{ year }} BipFlow</p>
+        <p>&copy; {{ year }} Bip Flow</p>
         <p>Ambiente protegido e monitorado</p>
       </div>
     </section>
@@ -68,7 +68,7 @@ const year = new Date().getFullYear()
           <span class="auth-logo-frame auth-logo-frame--light">
             <AuthBrandMark />
           </span>
-          <span class="auth-wordmark auth-wordmark--light">BipFlow Manage</span>
+          <span class="auth-wordmark auth-wordmark--light">Bip Flow</span>
         </div>
 
         <slot />

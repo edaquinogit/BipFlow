@@ -44,7 +44,7 @@ const reportIssue = () => {
         </h1>
         
         <h2 class="text-2xl font-bold text-zinc-300 tracking-tight">
-          BipFlow Hub Connection Failure
+          Bip Flow Hub Connection Failure
         </h2>
         
         <p class="text-zinc-500 text-sm max-w-md mx-auto leading-relaxed">
@@ -62,7 +62,7 @@ const reportIssue = () => {
         <p class="text-[10px] text-zinc-600 leading-relaxed">
           <span class="text-red-800">ERROR_CODE:</span> 0xINTERNAL_HUB_TIMEOUT<br>
           <span class="text-zinc-700">TRACE_ID:</span> {{ Math.random().toString(36).substring(7).toUpperCase() }}<br>
-          <span class="text-zinc-700">LOCATION:</span> BipFlow-Manage-Core
+          <span class="text-zinc-700">LOCATION:</span> BipFlow-Core
         </p>
       </section>
 

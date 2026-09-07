@@ -152,12 +152,12 @@ router.afterEach((to) => {
   sessionStorage.removeItem(CHUNK_RELOAD_STORAGE_KEY)
 
   // Define o título da página dinamicamente. O <title> estático do index.html
-  // ("BipFlow Manage — Gestão multiloja e vitrine digital") é o que os crawlers
+  // ("Bip Flow — Gestão multiloja e vitrine digital") é o que os crawlers
   // sem JS enxergam; isto ajusta apenas a aba do navegador após a montagem.
   const title = to.meta.title as string | undefined
   document.title = title
-    ? `${title} | BipFlow Manage`
-    : 'BipFlow Manage — Gestão multiloja e vitrine digital'
+    ? `${title} | Bip Flow`
+    : 'Bip Flow — Gestão multiloja e vitrine digital'
 })
 
 export default router
