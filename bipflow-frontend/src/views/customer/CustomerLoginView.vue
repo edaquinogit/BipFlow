@@ -1,35 +1,32 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { authService } from '@/services/auth.service'
+import AuthAlert from '@/components/auth/AuthAlert.vue'
+import AuthField from '@/components/auth/AuthField.vue'
+import AuthSubmitButton from '@/components/auth/AuthSubmitButton.vue'
 import { useCustomerProfile } from '@/composables/useCustomerProfile'
 import { AuthRouteNames, createCustomerProfilePath } from '@/router/auth.routes'
 import { PublicRoutes } from '@/router/public.routes'
+import { authService } from '@/services/auth.service'
 import { setSelectedStoreSlug } from '@/services/store-scope'
-import type { ApiError } from '@/types/auth'
+import { isAxiosError } from '@/types/errors'
 
-// Storefront customer login. Deliberately a separate component from the
-// dashboard's LoginView.vue (see docs/architecture/customer-profile-
-// checkout-evolution.md): a shopper clicking "Entrar" from the vitrine
-// must land somewhere that reads as logging into their customer profile,
-// reusing this same storefront-styled shell, not the admin panel branding.
+// Customer authentication intentionally keeps its storefront language and
+// destination separate from the administrative BipFlow Manage login.
 const route = useRoute()
 const router = useRouter()
 const routeStoreSlug = typeof route.params?.storeSlug === 'string' ? route.params.storeSlug : ''
-if (routeStoreSlug) {
-  setSelectedStoreSlug(routeStoreSlug)
-}
+if (routeStoreSlug) setSelectedStoreSlug(routeStoreSlug)
 
 const { fetchCustomerProfile } = useCustomerProfile()
 
 const email = ref('')
 const password = ref('')
+const emailError = ref('')
+const passwordError = ref('')
 const isSubmitting = ref(false)
 const errorMessage = ref('')
 
-// Same reasoning as LoginView.vue's sessionNotice: the router guard's
-// requiresCustomerAuth redirect and the API's 401 handler both attach
-// ?reason=, previously never surfaced to the shopper.
 const sessionNotice = computed(() => {
   switch (route.query.reason) {
     case 'session_expired':
@@ -41,17 +38,33 @@ const sessionNotice = computed(() => {
   }
 })
 
+function validateForm(): boolean {
+  emailError.value = ''
+  passwordError.value = ''
+
+  const normalizedEmail = email.value.trim()
+  if (!normalizedEmail) {
+    emailError.value = 'Informe seu email.'
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    emailError.value = 'Informe um email válido.'
+  }
+
+  if (!password.value) passwordError.value = 'Informe sua senha.'
+  return !emailError.value && !passwordError.value
+}
+
 function extractErrorMessage(error: unknown): string {
-  const data = (error as ApiError).response?.data
-  if (!data) return 'Não foi possível entrar agora. Tente novamente.'
-  if (typeof data.detail === 'string') return data.detail
-  if (typeof data.message === 'string') return data.message
-  return 'Email ou senha inválidos.'
+  if (isAxiosError(error)) {
+    if (error.response?.status === 401) return 'Email ou senha inválidos.'
+    if (error.response?.status === 429) return 'Muitas tentativas. Aguarde um momento e tente novamente.'
+    if (!error.response) return 'Falha de conexão. Verifique sua internet e tente novamente.'
+  }
+
+  return 'Não foi possível entrar agora. Tente novamente.'
 }
 
 function redirectAfterLogin(): void {
   const redirectTarget = typeof route.query.redirect === 'string' ? route.query.redirect : ''
-
   if (redirectTarget) {
     void router.push(redirectTarget)
     return
@@ -65,22 +78,18 @@ function redirectAfterLogin(): void {
 }
 
 async function handleSubmit(): Promise<void> {
-  if (!email.value.trim() || !password.value) {
-    errorMessage.value = 'Informe email e senha para continuar.'
-    return
-  }
-
   errorMessage.value = ''
+  if (!validateForm()) return
+
   isSubmitting.value = true
 
   try {
-    const result = await authService.login({ email: email.value.trim(), password: password.value })
+    const result = await authService.login({
+      email: email.value.trim().toLowerCase(),
+      password: password.value,
+    })
 
     if ('mfa_required' in result) {
-      // Storefront customer accounts never go through the dashboard's MFA
-      // setup flow, so this should only happen for a shared email that
-      // also has a dashboard/staff account with MFA enabled -- rare enough
-      // that a clear message beats building a second MFA UI for it here.
       errorMessage.value = 'Esta conta exige verificação em duas etapas. Acesse pelo painel administrativo.'
       return
     }
@@ -96,77 +105,117 @@ async function handleSubmit(): Promise<void> {
 </script>
 
 <template>
-  <div class="storefront-shell min-h-screen">
-    <div class="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-10 sm:px-6">
-      <div class="mb-6 text-center">
-        <p class="text-xs font-bold uppercase tracking-[0.2em] text-[#111827]">Minha conta</p>
-        <h1 class="mt-2 text-2xl font-semibold text-[#05050A]">Entrar</h1>
-        <p class="mt-2 text-sm leading-6 text-[#6B7280]">
-          Acesse seu perfil para finalizar pedidos mais rápido.
-        </p>
-      </div>
+  <main class="storefront-shell customer-auth-shell relative min-h-screen min-h-dvh overflow-hidden bg-[#fafafa]">
+    <div class="customer-auth-grid" aria-hidden="true" />
+    <div class="customer-auth-glow" aria-hidden="true" />
 
-      <div
-        v-if="sessionNotice"
-        data-cy="session-notice"
-        class="mb-5 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800"
-      >
-        {{ sessionNotice }}
-      </div>
+    <div class="relative z-10 mx-auto flex min-h-screen min-h-dvh max-w-lg flex-col justify-center px-4 py-8 sm:px-6 sm:py-12">
+      <section class="rounded-[1.75rem] border border-[#e5e7eb] bg-white p-6 shadow-[0_24px_70px_-38px_rgba(5,5,10,0.45)] sm:p-9">
+        <div class="mb-8 flex items-center justify-center gap-3">
+          <span class="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#e5e7eb] bg-white p-1 shadow-sm">
+            <img src="/brand/bipflow-logo-auth.webp" alt="" class="h-full w-full object-contain" aria-hidden="true" />
+          </span>
+          <span class="text-lg font-extrabold tracking-[-0.045em] text-[#05050a]">BipFlow</span>
+        </div>
 
-      <div
-        v-if="errorMessage"
-        data-cy="login-error"
-        class="mb-5 rounded-xl border border-[#F3F4F6] bg-[#F3F4F6] p-3 text-sm text-[#374151]"
-      >
-        {{ errorMessage }}
-      </div>
+        <header class="mb-7 text-center">
+          <p class="text-[11px] font-extrabold uppercase tracking-[0.22em] text-[#d60073]">Minha conta</p>
+          <h1 class="mt-2 text-[2rem] font-extrabold tracking-[-0.045em] text-[#05050a]">Que bom ter você aqui</h1>
+          <p class="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#6b7280]">
+            Entre no seu perfil para acompanhar e finalizar pedidos com mais agilidade.
+          </p>
+        </header>
 
-      <form class="space-y-4" @submit.prevent="handleSubmit">
-        <label class="block">
-          <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#6B7280]">Email</span>
-          <input
+        <div class="mb-5 grid gap-3">
+          <AuthAlert v-if="sessionNotice" data-cy="session-notice" tone="info">
+            {{ sessionNotice }}
+          </AuthAlert>
+          <AuthAlert v-if="errorMessage" data-cy="login-error" tone="error">
+            {{ errorMessage }}
+          </AuthAlert>
+        </div>
+
+        <form class="space-y-1" novalidate @submit.prevent="handleSubmit">
+          <AuthField
+            id="customer-email"
             v-model="email"
+            name="email"
+            label="Email"
             type="email"
+            inputmode="email"
             autocomplete="email"
-            required
-            class="h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 text-sm text-[#05050A] outline-none transition placeholder:text-[#9CA3AF] focus:border-[#111827] focus:ring-2 focus:ring-[#F3F4F6]"
             placeholder="voce@email.com"
+            :error="emailError"
+            data-cy="customer-login-email"
+            @input="emailError = ''"
           />
-        </label>
 
-        <label class="block">
-          <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#6B7280]">Senha</span>
-          <input
+          <AuthField
+            id="customer-password"
             v-model="password"
+            name="password"
+            label="Senha"
             type="password"
             autocomplete="current-password"
-            required
-            class="h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 text-sm text-[#05050A] outline-none transition placeholder:text-[#9CA3AF] focus:border-[#111827] focus:ring-2 focus:ring-[#F3F4F6]"
-            placeholder="Sua senha"
-          />
-        </label>
+            placeholder="Digite sua senha"
+            :error="passwordError"
+            data-cy="customer-login-password"
+            @input="passwordError = ''"
+          >
+            <template #labelAction>
+              <RouterLink
+                :to="{ name: AuthRouteNames.ForgotPassword }"
+                class="text-xs font-semibold text-[#111827] underline-offset-4 hover:underline"
+              >
+                Esqueci minha senha
+              </RouterLink>
+            </template>
+          </AuthField>
 
-        <button
-          type="submit"
-          :disabled="isSubmitting"
-          class="inline-flex h-11 w-full items-center justify-center rounded-lg bg-[#05050A] text-sm font-semibold text-white transition hover:bg-[#111827] disabled:cursor-not-allowed disabled:bg-[#D1D5DB]"
-        >
-          {{ isSubmitting ? 'Entrando...' : 'Entrar' }}
-        </button>
-      </form>
+          <div class="pt-2">
+            <AuthSubmitButton :loading="isSubmitting" loading-label="Entrando...">
+              Entrar na minha conta
+            </AuthSubmitButton>
+          </div>
+        </form>
 
-      <div class="mt-6 flex flex-col items-center gap-2 text-sm">
-        <RouterLink
-          :to="{ path: createCustomerProfilePath(routeStoreSlug), query: route.query.redirect ? { redirect: route.query.redirect } : {} }"
-          class="font-semibold text-[#111827] hover:underline"
-        >
-          Ainda não tem perfil? Criar agora
-        </RouterLink>
-        <RouterLink :to="{ name: AuthRouteNames.ForgotPassword }" class="text-[#6B7280] hover:underline">
-          Esqueci minha senha
-        </RouterLink>
-      </div>
+        <p class="mt-7 text-center text-sm text-[#6b7280]">
+          Ainda não tem perfil?
+          <RouterLink
+            :to="{ path: createCustomerProfilePath(routeStoreSlug), query: route.query.redirect ? { redirect: route.query.redirect } : {} }"
+            class="ml-1 font-bold text-[#111827] underline-offset-4 hover:underline"
+          >
+            Criar agora
+          </RouterLink>
+        </p>
+      </section>
+
+      <p class="mt-5 text-center text-xs leading-5 text-[#6b7280]">
+        Seus dados são usados apenas para facilitar sua experiência de compra.
+      </p>
     </div>
-  </div>
+  </main>
 </template>
+
+<style scoped>
+.customer-auth-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(17, 24, 39, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(17, 24, 39, 0.035) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(circle at 50% 45%, black, transparent 74%);
+}
+
+.customer-auth-glow {
+  position: absolute;
+  top: -12rem;
+  left: 50%;
+  width: 34rem;
+  height: 34rem;
+  transform: translateX(-50%);
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(255, 0, 140, 0.06), transparent 68%);
+}
+</style>
