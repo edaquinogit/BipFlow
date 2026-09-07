@@ -14,6 +14,12 @@ const CANONICAL_ORIGIN = 'https://bipflow-manage.pages.dev'
 
 const indexHtml = readFileSync(resolve(FRONTEND, 'index.html'), 'utf8')
 
+// Shared by description / og:description / twitter:description. LinkedIn's
+// Post Inspector rejects a card whose description is under 100 characters;
+// keep it in the 100..160 range every crawler is happy with.
+const SOCIAL_DESCRIPTION =
+  'Plataforma SaaS multi-tenant para gestão de lojas, produtos, estoque e pedidos, com vitrine digital, PDV, checkout por WhatsApp e segurança avançada.'
+
 /** width/height from a PNG IHDR chunk (bytes 16..24, big-endian). */
 function pngSize(path: string): { width: number; height: number } {
   const buf = readFileSync(path)
@@ -42,9 +48,21 @@ describe('social metadata — crawler-visible <head> in index.html', () => {
     const title = indexHtml.match(/<title>([^<]*)<\/title>/i)?.[1] ?? ''
     expect(title).toBe('BipFlow Manage — Gestão multiloja e vitrine digital')
     expect(indexHtml).not.toMatch(/KN Boutique|Boutique Fitness/)
-    expect(meta(indexHtml, 'name', 'description')).toBe(
-      'Plataforma SaaS para gestão de lojas, catálogos, pedidos e vitrines digitais personalizadas.',
-    )
+    expect(meta(indexHtml, 'name', 'description')).toBe(SOCIAL_DESCRIPTION)
+  })
+
+  it('description / og:description / twitter:description match and are 100..160 chars (LinkedIn ingestion)', () => {
+    const description = meta(indexHtml, 'name', 'description') ?? ''
+    const ogDescription = meta(indexHtml, 'property', 'og:description') ?? ''
+    const twitterDescription = meta(indexHtml, 'name', 'twitter:description') ?? ''
+
+    expect(ogDescription).toBe(description)
+    expect(twitterDescription).toBe(description)
+
+    // string spread counts code points, matching how a crawler measures it
+    const length = [...description].length
+    expect(length, `description is ${length} chars: "${description}"`).toBeGreaterThanOrEqual(100)
+    expect(length, `description is ${length} chars: "${description}"`).toBeLessThanOrEqual(160)
   })
 
   it('sets lang and a zoom-safe viewport (WCAG 1.4.4)', () => {
@@ -58,8 +76,7 @@ describe('social metadata — crawler-visible <head> in index.html', () => {
       'og:type': 'website',
       'og:site_name': 'BipFlow Manage',
       'og:title': 'BipFlow Manage — Gestão multiloja e vitrine digital',
-      'og:description':
-        'Plataforma SaaS para gestão de lojas, catálogos, pedidos e vitrines digitais personalizadas.',
+      'og:description': SOCIAL_DESCRIPTION,
       'og:url': `${CANONICAL_ORIGIN}/`,
       'og:image': `${CANONICAL_ORIGIN}/brand/bipflow-og.png`,
       'og:image:secure_url': `${CANONICAL_ORIGIN}/brand/bipflow-og.png`,
@@ -78,7 +95,7 @@ describe('social metadata — crawler-visible <head> in index.html', () => {
   it('declares a summary_large_image Twitter card', () => {
     expect(meta(indexHtml, 'name', 'twitter:card')).toBe('summary_large_image')
     expect(meta(indexHtml, 'name', 'twitter:title')).toBeTruthy()
-    expect(meta(indexHtml, 'name', 'twitter:description')).toBeTruthy()
+    expect(meta(indexHtml, 'name', 'twitter:description')).toBe(SOCIAL_DESCRIPTION)
     expect(meta(indexHtml, 'name', 'twitter:image')).toBe(`${CANONICAL_ORIGIN}/brand/bipflow-og.png`)
   })
 

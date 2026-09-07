@@ -49,7 +49,9 @@ function buildBanner(overrides: Partial<StorefrontBanner> = {}): StorefrontBanne
   return {
     id: 10,
     store_id: 1,
+    placement: 'promotion',
     image_url: 'https://cdn.example.com/promo.png',
+    image_url_mobile: '',
     alt_text: 'Promocao',
     title: 'Oferta',
     subtitle: 'Itens selecionados',
@@ -141,7 +143,9 @@ describe('storefrontAppearanceService', () => {
     await expect(storefrontAppearanceService.deleteBanner(10)).resolves.toBeUndefined()
     await expect(storefrontAppearanceService.reorderBanners([11, 10])).resolves.toHaveLength(2)
 
-    expect(api.get).toHaveBeenCalledWith('v1/store/current/storefront-banners/')
+    expect(api.get).toHaveBeenCalledWith('v1/store/current/storefront-banners/', {
+      params: { placement: 'promotion' },
+    })
     expect(api.post).toHaveBeenNthCalledWith(1, 'v1/store/current/storefront-banners/', {
       image_url: banner.image_url,
     })
@@ -151,6 +155,23 @@ describe('storefrontAppearanceService', () => {
     expect(api.delete).toHaveBeenCalledWith('v1/store/current/storefront-banners/10/')
     expect(api.post).toHaveBeenNthCalledWith(2, 'v1/store/current/storefront-banners/reorder/', {
       ids: [11, 10],
+      placement: 'promotion',
+    })
+  })
+
+  it('scopes banner list and reorder to the hero placement when requested', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ data: [] } as never)
+    vi.mocked(api.post).mockResolvedValueOnce({ data: [] } as never)
+
+    await storefrontAppearanceService.listBanners('hero')
+    await storefrontAppearanceService.reorderBanners([1, 2], 'hero')
+
+    expect(api.get).toHaveBeenCalledWith('v1/store/current/storefront-banners/', {
+      params: { placement: 'hero' },
+    })
+    expect(api.post).toHaveBeenCalledWith('v1/store/current/storefront-banners/reorder/', {
+      ids: [1, 2],
+      placement: 'hero',
     })
   })
 

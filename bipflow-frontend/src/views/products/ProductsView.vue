@@ -9,350 +9,185 @@
     :data-decoration="storefrontAppearance?.decoration_enabled ? storefrontAppearance.decoration_style : 'none'"
     :style="storeBranding.cssVars"
   >
-    <header class="storefront-header border-b">
-      <div class="mx-auto max-w-7xl px-4 py-3.5 min-[390px]:py-4 sm:px-6 lg:px-8">
-        <div class="flex flex-col gap-3 min-[390px]:gap-3.5 sm:flex-row sm:items-center sm:justify-between">
-          <div class="flex items-center gap-2.5 min-[390px]:gap-3">
-            <div class="flex h-11 w-28 shrink-0 items-center justify-center overflow-hidden min-[390px]:h-12 min-[390px]:w-32">
-              <img
-                :src="storeBranding.logoUrl"
-                :alt="storeBranding.name"
-                class="h-full w-full object-contain"
-              />
-            </div>
-            <div class="min-w-0">
-              <p class="brand-wordmark brand-wordmark-premium truncate text-lg min-[390px]:text-xl">{{ storeBranding.name }}</p>
-              <p class="storefront-muted truncate text-xs min-[390px]:text-sm">{{ storeBranding.tagline }}</p>
-            </div>
-          </div>
+    <StorefrontHeader
+      variant="catalog"
+      :store-name="storeBranding.name"
+      :logo-url="storeBranding.logoUrl"
+      :catalog-to="catalogRoute"
+      :search="filters.search"
+      :item-count="itemCount"
+      :subtotal="subtotal"
+      :filters-open="isFiltersOpen"
+      :active-filter-count="activeFilterCount"
+      @update:search="updateFilters({ search: $event })"
+      @open-cart="openCart"
+      @toggle-filters="toggleFilters"
+    >
+      <template #account>
+        <CustomerProfileMenuButton />
+      </template>
+    </StorefrontHeader>
 
-          <div class="flex items-center gap-2.5 sm:flex-row">
-            <CustomerProfileMenuButton />
+    <!-- Filters: bottom sheet on mobile, centred sheet on larger screens -->
+    <Transition name="sf-sheet">
+      <div v-if="isFiltersOpen" class="fixed inset-0 z-50">
+        <div class="absolute inset-0 bg-[var(--store-text)]/50" @click="handleCancelFilters" />
 
+        <div
+          ref="filtersSheetRef"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Filtrar produtos"
+          class="sf-sheet-panel absolute inset-x-0 bottom-0 mx-auto flex max-h-[85vh] max-w-lg flex-col rounded-t-[var(--store-radius-lg)] border-t border-[var(--store-border)] bg-[var(--store-surface)] shadow-[var(--shadow-sf-overlay)] sm:inset-x-4 sm:bottom-auto sm:top-[7vh] sm:max-h-[80vh] sm:rounded-[var(--store-radius-lg)] sm:border"
+        >
+          <header class="flex items-center justify-between gap-3 border-b border-[var(--store-border)] px-4 py-3 sm:px-5">
+            <h2 class="text-base font-semibold text-[var(--store-text)]">Filtros</h2>
             <button
+              ref="filtersCloseRef"
               type="button"
-              data-cy="open-cart-button"
-              class="inline-flex h-11 items-center justify-center gap-2 rounded-xl border px-3.5 whitespace-nowrap text-[11px] font-bold uppercase leading-[1.15] tracking-[0.14em] transition focus:outline-none focus:ring-2 focus:ring-[var(--store-primary-soft)] min-[390px]:px-4 min-[390px]:text-xs"
-              :class="itemCount > 0
-                ? 'storefront-primary-button shadow-[0_12px_28px_-18px_rgba(5,5,10,0.8)]'
-                : 'storefront-outline-button bg-white'"
-              @click="openCart"
+              class="storefront-icon-btn"
+              aria-label="Fechar filtros"
+              @click="handleCancelFilters"
             >
-              <ShoppingBagIcon class="h-4 w-4" aria-hidden="true" />
-              <span>Pedido</span>
-              <span class="whitespace-nowrap" :class="itemCount > 0 ? 'text-white/75' : 'text-[#6B7280]'">
-                {{ itemCount }} item<span v-if="itemCount !== 1">s</span>
-              </span>
-              <span class="whitespace-nowrap font-bold">{{ formatBRL(subtotal) }}</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="storefront-panel relative mt-4 rounded-[1.15rem] border p-2.5 min-[390px]:mt-5 min-[390px]:rounded-xl min-[390px]:p-3">
-          <div class="flex items-center gap-2">
-            <label class="relative min-w-0 flex-1">
-              <span class="sr-only">Buscar produtos</span>
-              <MagnifyingGlassIcon
-                class="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[#9CA3AF]"
-                aria-hidden="true"
-              />
-              <input
-                :value="filters.search"
-                type="search"
-                class="h-10 w-full rounded-full border border-transparent bg-[#F3F4F6] pl-10 pr-4 text-sm text-[#05050A] outline-none transition placeholder:text-[#9CA3AF] focus:border-[var(--store-primary)] focus:bg-white focus:ring-2 focus:ring-[var(--store-primary-soft)] min-[390px]:h-11"
-                placeholder="Buscar produto"
-                aria-label="Buscar produtos por nome"
-                @input="handleSearchInput"
-              />
-            </label>
-
-            <button
-              type="button"
-              :aria-expanded="isFiltersOpen"
-              aria-label="Abrir filtros"
-              class="group inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-transparent bg-[#F3F4F6] text-[#6B7280] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--store-primary-soft)] hover:text-[var(--store-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--store-primary-soft)] min-[390px]:h-11 min-[390px]:w-11"
-              @click="toggleFilters"
-            >
-              <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-          </div>
+          </header>
 
-          <!-- Glass Morphism Filters Drawer -->
-          <Transition
-            enter-active-class="transition duration-300 ease-out"
-            enter-from-class="opacity-0 translate-y-2"
-            enter-to-class="opacity-100 translate-y-0"
-            leave-active-class="transition duration-200 ease-in"
-            leave-from-class="opacity-100 translate-y-0"
-            leave-to-class="opacity-0 translate-y-2"
-          >
-            <div v-if="isFiltersOpen" class="absolute left-0 right-0 top-full z-40 mx-2.5 mt-2 min-[390px]:mx-3 lg:mx-4">
-              <!-- Overlay backdrop -->
-              <div class="fixed inset-0 bg-black/10 backdrop-blur-sm" @click="isFiltersOpen = false" />
+          <div class="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-5">
+            <div>
+              <label class="mb-1.5 block text-[0.8125rem] font-semibold text-[var(--store-text-muted)]" for="sf-sort">Ordenar por</label>
+              <select
+                id="sf-sort"
+                v-model="sortBy"
+                class="storefront-select"
+              >
+                <option value="featured">Mais relevantes</option>
+                <option value="price-asc">Menor preço</option>
+                <option value="price-desc">Maior preço</option>
+                <option value="name-asc">Nome A-Z</option>
+                <option value="newest">Mais recentes</option>
+              </select>
+            </div>
 
-              <!-- Glass panel -->
-              <div class="relative mx-auto max-w-2xl rounded-[1.35rem] border border-white/40 bg-white/80 p-3.5 shadow-2xl backdrop-blur-xl min-[390px]:rounded-2xl min-[390px]:p-4 sm:p-6">
-                <div class="grid gap-4 min-[390px]:gap-6 sm:grid-cols-2">
-                  <!-- Sort -->
-                  <div>
-                    <label class="mb-2.5 block text-[10px] font-black uppercase tracking-[0.18em] text-[#6B7280] min-[390px]:mb-3 min-[390px]:text-xs">
-                      Ordenação
-                    </label>
-                    <select
-                      v-model="sortBy"
-                      class="w-full rounded-xl border border-[#D1D5DB] bg-white/50 px-3 py-2.5 text-sm text-[#05050A] outline-none transition focus:border-[var(--store-primary)] focus:ring-2 focus:ring-[var(--store-primary-soft)]"
-                    >
-                      <option value="featured">Mais relevantes</option>
-                      <option value="price-asc">Menor preço</option>
-                      <option value="price-desc">Maior preço</option>
-                      <option value="name-asc">Nome A-Z</option>
-                      <option value="newest">Mais recentes</option>
-                    </select>
-                  </div>
+            <div>
+              <p class="mb-1.5 text-[0.8125rem] font-semibold text-[var(--store-text-muted)]">Disponibilidade</p>
+              <label class="flex min-h-11 cursor-pointer items-center gap-2.5 text-sm text-[var(--store-text)]">
+                <input
+                  type="checkbox"
+                  :checked="draftInStockOnly"
+                  class="h-4 w-4 rounded border-[var(--store-border)] text-[var(--store-brand-on-light)] focus:ring-[var(--store-brand-soft)]"
+                  @change="handleStockFilterToggle"
+                />
+                Somente em estoque
+              </label>
+            </div>
 
-                  <!-- Stock Filter -->
-                  <div>
-                    <label class="mb-2.5 block text-[10px] font-black uppercase tracking-[0.18em] text-[#6B7280] min-[390px]:mb-3 min-[390px]:text-xs">
-                      Disponibilidade
-                    </label>
-                    <label class="inline-flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        :checked="draftInStockOnly"
-                        class="w-4 h-4 rounded border-[#D1D5DB] text-[var(--store-primary)] focus:ring-2 focus:ring-[var(--store-primary-soft)]"
-                        @change="handleStockFilterToggle"
-                      />
-                      <span class="text-sm text-[#6B7280]">Em estoque</span>
-                    </label>
-                  </div>
-                </div>
-
-                <!-- Categories -->
-                <div class="mt-5 border-t border-white/20 pt-5 min-[390px]:mt-6 min-[390px]:pt-6">
-                  <label class="mb-2.5 block text-[10px] font-black uppercase tracking-[0.18em] text-[#6B7280] min-[390px]:mb-3 min-[390px]:text-xs">
-                    Categorias
-                  </label>
-                  <div class="flex flex-wrap gap-1.5 min-[390px]:gap-2">
-                    <button
-                      type="button"
-                      class="rounded-full px-3 py-1.5 text-[11px] font-bold uppercase leading-[1.15] tracking-[0.12em] transition-all duration-200"
-                      :class="!draftCategoryId
-                        ? 'bg-[var(--store-primary)] text-white shadow-md'
-                        : 'bg-[#F3F4F6] text-[#6B7280] hover:bg-[var(--store-primary-soft)] hover:text-[var(--store-primary)]'"
-                      @click="handleQuickCategory(undefined)"
-                    >
-                      Todas
-                    </button>
-
-                    <button
-                      v-for="category in categories"
-                      :key="category.id"
-                      type="button"
-                      class="rounded-full px-3 py-1.5 text-[11px] font-bold uppercase leading-[1.15] tracking-[0.12em] transition-all duration-200"
-                      :class="draftCategoryId === category.id
-                        ? 'bg-[var(--store-primary)] text-white shadow-md'
-                        : 'bg-[#F3F4F6] text-[#6B7280] hover:bg-[var(--store-primary-soft)] hover:text-[var(--store-primary)]'"
-                      @click="handleQuickCategory(category.id)"
-                    >
-                      {{ category.name }}
-                    </button>
-                  </div>
-                </div>
-
-                <!-- Save / Cancel -->
-                <div class="mt-5 flex items-center justify-end gap-2.5 border-t border-white/20 pt-4 min-[390px]:mt-6 min-[390px]:gap-3">
-                  <button
-                    type="button"
-                    class="storefront-outline-button inline-flex h-10 items-center justify-center rounded-xl border bg-white px-4 whitespace-nowrap text-[11px] font-bold uppercase leading-[1.15] tracking-[0.14em] transition focus:outline-none focus:ring-2 focus:ring-[var(--store-primary-soft)] min-[390px]:text-xs"
-                    @click="handleCancelFilters"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    class="storefront-primary-button inline-flex h-10 items-center justify-center rounded-xl px-5 whitespace-nowrap text-[11px] font-bold uppercase leading-[1.15] tracking-[0.14em] text-white shadow-[0_12px_28px_-18px_rgba(5,5,10,0.8)] transition focus:outline-none focus:ring-2 focus:ring-[var(--store-primary-soft)] min-[390px]:text-xs"
-                    @click="handleSaveFilters"
-                  >
-                    Salvar
-                  </button>
-                </div>
-
-                <!-- Close button -->
+            <div v-if="categories.length">
+              <p class="mb-2 text-[0.8125rem] font-semibold text-[var(--store-text-muted)]">Categorias</p>
+              <div class="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  @click="isFiltersOpen = false"
-                  class="absolute top-3 right-3 text-[#9CA3AF] hover:text-[var(--store-primary)] transition-colors"
-                  aria-label="Fechar filtros"
+                  class="storefront-chip"
+                  :class="{ 'storefront-chip--on': !draftCategoryId }"
+                  :aria-pressed="!draftCategoryId"
+                  @click="handleQuickCategory(undefined)"
                 >
-                  <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  Todas
+                </button>
+                <button
+                  v-for="category in categories"
+                  :key="category.id"
+                  type="button"
+                  class="storefront-chip"
+                  :class="{ 'storefront-chip--on': draftCategoryId === category.id }"
+                  :aria-pressed="draftCategoryId === category.id"
+                  @click="handleQuickCategory(category.id)"
+                >
+                  {{ category.name }}
                 </button>
               </div>
             </div>
-          </Transition>
+          </div>
+
+          <footer class="flex items-center gap-2.5 border-t border-[var(--store-border)] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 sm:px-5 sm:pb-4">
+            <StorefrontButton variant="ghost" class="shrink-0" @click="handleClearFilters">
+              Limpar
+            </StorefrontButton>
+            <StorefrontButton class="flex-1" @click="handleSaveFilters">
+              Ver resultados
+            </StorefrontButton>
+          </footer>
         </div>
       </div>
-    </header>
+    </Transition>
 
     <main
       class="mx-auto max-w-7xl px-4 py-6 pb-24 sm:px-6 lg:px-8"
       :aria-busy="isLoading ? 'true' : 'false'"
+      style="overflow-anchor: none"
     >
       <p class="sr-only" aria-live="polite">{{ liveRegionMessage }}</p>
 
-      <section
-        v-if="heroAppearance"
-        data-cy="storefront-hero-banner"
-        class="mb-5 overflow-hidden rounded-[var(--store-radius-lg)] border border-[var(--store-border)] bg-[var(--store-surface)] shadow-[var(--store-card-shadow)] min-[390px]:mb-6"
-      >
-        <picture>
-          <source
-            v-if="heroAppearance.hero_image_mobile"
-            :srcset="heroAppearance.hero_image_mobile"
-            media="(max-width: 640px)"
-          />
-          <img
-            :src="heroAppearance.hero_image_desktop"
-            :alt="heroAppearance.hero_alt_text || storeBranding.name"
-            class="aspect-[16/7] w-full object-cover"
-            loading="eager"
-          />
-        </picture>
+      <HeroCarousel :banners="heroBanners" :store-name="storeBranding.name" />
 
-        <div
-          v-if="heroAppearance.hero_title || heroAppearance.hero_subtitle || (heroAppearance.hero_cta_text && heroAppearance.hero_cta_url)"
-          class="flex flex-col gap-3 border-t border-[var(--store-border)] px-4 py-4 min-[390px]:px-5 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <div class="min-w-0">
-            <h2
-              v-if="heroAppearance.hero_title"
-              class="text-lg font-semibold leading-tight text-[var(--store-text)] min-[390px]:text-xl"
-            >
-              {{ heroAppearance.hero_title }}
-            </h2>
-            <p
-              v-if="heroAppearance.hero_subtitle"
-              class="mt-1 text-sm leading-5 text-[var(--store-text-muted)]"
-            >
-              {{ heroAppearance.hero_subtitle }}
-            </p>
-          </div>
+      <PromotionsCarousel :promotions="promotionBanners" />
 
-          <a
-            v-if="heroAppearance.hero_cta_text && heroAppearance.hero_cta_url"
-            :href="heroAppearance.hero_cta_url"
-            target="_blank"
-            rel="noopener"
-            class="storefront-primary-button inline-flex h-11 shrink-0 items-center justify-center rounded-[var(--store-radius-md)] px-4 text-[11px] font-bold uppercase tracking-[0.14em] focus:outline-none focus:ring-2 focus:ring-[var(--store-primary-soft)]"
-          >
-            {{ heroAppearance.hero_cta_text }}
-          </a>
-        </div>
-      </section>
+      <CategoryNav
+        :categories="categories"
+        :active-category-id="filters.categoryId"
+        @select="handleCategorySelect"
+      />
 
-      <section
-        v-if="storefrontBanners.length"
-        data-cy="storefront-promotional-banners"
-        class="mb-5 grid gap-3 min-[390px]:mb-6 md:grid-cols-2"
-      >
-        <component
-          :is="banner.button_url ? 'a' : 'div'"
-          v-for="banner in storefrontBanners"
-          :key="`${banner.position}-${banner.image_url}`"
-          :href="banner.button_url || undefined"
-          class="group overflow-hidden rounded-[var(--store-radius-lg)] border border-[var(--store-border)] bg-[var(--store-surface)] shadow-[var(--store-card-shadow)] transition hover:border-[var(--store-primary)]/45"
-        >
-          <img
-            :src="banner.image_url"
-            :alt="banner.alt_text || banner.title || storeBranding.name"
-            class="aspect-[5/2] w-full object-cover"
-            loading="lazy"
-          />
-          <div
-            v-if="banner.title || banner.subtitle || (banner.cta_text && banner.button_url)"
-            class="flex flex-col gap-3 border-t border-[var(--store-border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-          >
-            <div class="min-w-0">
-              <h2 v-if="banner.title" class="text-sm font-semibold leading-tight text-[var(--store-text)]">
-                {{ banner.title }}
-              </h2>
-              <p v-if="banner.subtitle" class="mt-1 text-xs leading-5 text-[var(--store-text-muted)]">
-                {{ banner.subtitle }}
-              </p>
-            </div>
-            <span
-              v-if="banner.cta_text && banner.button_url"
-              class="storefront-primary-button inline-flex h-9 shrink-0 items-center justify-center rounded-[var(--store-radius-md)] px-3 text-[10px] font-bold uppercase tracking-[0.14em]"
-            >
-              {{ banner.cta_text }}
-            </span>
-          </div>
-        </component>
-      </section>
-
-      <div class="mb-5 flex flex-col gap-2 text-sm text-[#6B7280] min-[390px]:mb-6 min-[390px]:flex-row min-[390px]:items-center min-[390px]:justify-between min-[390px]:gap-4">
+      <div class="mb-4 flex items-center justify-between gap-3 text-[0.8125rem] text-[var(--store-text-muted)] sm:mb-5">
         <p>{{ showingRange }}</p>
         <button
-          v-if="filters.search || filters.categoryId"
+          v-if="filters.search || filters.categoryId || filters.inStockOnly"
           type="button"
-          class="font-medium text-[#05050A] underline-offset-4 hover:text-[var(--store-primary)] hover:underline"
+          class="font-medium text-[var(--store-brand-on-light)] underline-offset-4 hover:underline"
           @click="handleClearFilters"
         >
           Limpar filtros
         </button>
       </div>
 
-      <div v-if="isInitialLoading && products.length === 0" class="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 lg:gap-x-5 xl:grid-cols-4">
+      <div
+        v-if="isInitialLoading && products.length === 0"
+        class="storefront-product-grid grid grid-cols-2 gap-x-2.5 gap-y-5 sm:grid-cols-3 sm:gap-x-4 sm:gap-y-6 xl:grid-cols-4"
+      >
         <div
           v-for="n in 8"
           :key="n"
-          class="animate-pulse"
+          class="overflow-hidden rounded-[var(--store-radius-lg)] border border-[var(--store-border)] bg-[var(--store-surface)]"
         >
-          <div class="aspect-[4/5] rounded-lg bg-[#F3F4F6]" />
-          <div class="space-y-3 pt-4">
-            <div class="h-4 w-2/3 rounded bg-slate-200" />
-            <div class="h-7 w-1/2 rounded bg-slate-200" />
-            <div class="h-10 rounded-lg bg-slate-200" />
+          <StorefrontSkeleton radius="sm" class="aspect-[4/5] w-full" />
+          <div class="space-y-2 p-3 sm:p-3.5">
+            <StorefrontSkeleton variant="text" width="40%" />
+            <StorefrontSkeleton variant="text" width="85%" />
+            <StorefrontSkeleton variant="text" width="55%" height="1.1rem" />
+            <StorefrontSkeleton height="2.75rem" class="mt-1" />
           </div>
         </div>
       </div>
 
       <div
         v-else-if="error && products.length === 0"
-        class="mx-auto max-w-xl py-24 text-center"
+        class="mx-auto max-w-sm py-16 text-center sm:py-20"
       >
-        <div class="mb-4 text-red-600">
-          <svg class="mx-auto h-12 w-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"
-            />
-          </svg>
-        </div>
-        <h2 class="mb-2 text-lg font-medium text-[#05050A]">Erro ao carregar produtos</h2>
-        <p class="mb-6 text-[#6B7280]">{{ error }}</p>
-        <div class="flex flex-wrap items-center justify-center gap-3">
-          <button
-            type="button"
-            aria-label="Tentar novamente"
-            class="inline-flex items-center rounded-lg bg-[#05050A] px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-[var(--store-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--store-primary-soft)] focus:ring-offset-2"
-            @click="retryFetch"
-          >
+        <h2 class="text-base font-semibold text-[var(--store-text)]">Não foi possível carregar os produtos</h2>
+        <p class="mx-auto mt-2 text-[0.8125rem] leading-6 text-[var(--store-text-muted)]">{{ error }}</p>
+        <div class="mt-5 flex flex-wrap items-center justify-center gap-2.5">
+          <StorefrontButton aria-label="Tentar novamente" @click="retryFetch">
             Tentar novamente
-          </button>
-          <button
-            type="button"
+          </StorefrontButton>
+          <StorefrontButton
+            variant="ghost"
             aria-label="Relatar problema"
-            class="inline-flex items-center rounded-lg border border-[#D1D5DB] bg-white px-5 py-3 text-sm font-medium text-[#374151] transition-colors hover:border-[var(--store-primary)] hover:text-[var(--store-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--store-primary-soft)] focus:ring-offset-2"
             @click="handleReportCatalogProblem"
           >
             Relatar problema
-          </button>
+          </StorefrontButton>
         </div>
       </div>
 
@@ -360,8 +195,8 @@
         v-else-if="displayedProducts.length > 0"
         class="storefront-product-grid grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4"
         :class="isCompactDensity
-          ? 'gap-x-2 gap-y-4 min-[390px]:gap-x-2.5 min-[390px]:gap-y-5 lg:gap-x-4 lg:gap-y-6'
-          : 'gap-x-2.5 gap-y-5 min-[390px]:gap-x-3 min-[390px]:gap-y-6 lg:gap-x-5 lg:gap-y-8'"
+          ? 'gap-x-2 gap-y-3 sm:gap-x-3 sm:gap-y-4'
+          : 'gap-x-2.5 gap-y-4 sm:gap-x-4 sm:gap-y-6'"
       >
         <ProductCard
           v-for="product in displayedProducts"
@@ -375,30 +210,31 @@
 
       <div
         v-else
-        class="mx-auto max-w-xl py-24 text-center"
+        data-cy="storefront-empty-state"
+        class="mx-auto max-w-sm py-16 text-center sm:py-20"
       >
-        <div class="mb-4 text-slate-400">
-          <svg class="mx-auto h-12 w-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2M4 13h2m8-5v2m0 0v2m0-2h2m-2 0h-2"
-            />
-          </svg>
-        </div>
-        <h2 class="mb-2 text-lg font-medium text-[#05050A]">Nenhum produto encontrado</h2>
-        <p class="mb-6 text-[#6B7280]">
-          Escolha outra categoria para continuar explorando.
+        <h2 class="text-base font-semibold text-[var(--store-text)]">{{ emptyStateTitle }}</h2>
+        <p class="mx-auto mt-2 text-[0.8125rem] leading-6 text-[var(--store-text-muted)]">
+          {{ emptyStateMessage }}
         </p>
-        <button
-          type="button"
-          aria-label="Limpar filtros"
-          class="inline-flex items-center rounded-lg border border-[#D1D5DB] bg-white px-5 py-3 text-sm font-medium text-[#05050A] transition-colors hover:border-[var(--store-primary)] hover:text-[var(--store-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--store-primary-soft)] focus:ring-offset-2"
-          @click="handleClearFilters"
-        >
-          Limpar filtros
-        </button>
+        <div class="mt-5 flex flex-wrap items-center justify-center gap-2.5">
+          <StorefrontButton
+            v-if="filters.categoryId"
+            variant="outline"
+            aria-label="Ver todos os produtos"
+            @click="handleViewAllProducts"
+          >
+            Ver todos os produtos
+          </StorefrontButton>
+          <StorefrontButton
+            v-if="filters.search || filters.categoryId || filters.inStockOnly"
+            variant="outline"
+            aria-label="Limpar filtros"
+            @click="handleClearFilters"
+          >
+            Limpar filtros
+          </StorefrontButton>
+        </div>
       </div>
 
       <div v-if="totalPages > 1" class="mt-8">
@@ -414,10 +250,15 @@
         />
       </div>
 
-      <footer class="mt-10 space-y-4 border-t border-[#E5E7EB] py-6 text-center">
-        <StorefrontSocialLinks :merchant="storefrontAppearance?.merchant" />
-        <FeedbackTrigger />
-      </footer>
+      <StorefrontFooter
+        :store-name="storeBranding.name"
+        :tagline="storeBranding.tagline"
+        :merchant="storefrontAppearance?.merchant"
+      >
+        <template #feedback>
+          <FeedbackTrigger />
+        </template>
+      </StorefrontFooter>
     </main>
 
     <FloatingCartButton
@@ -457,12 +298,15 @@ import CartDrawer from './CartDrawer.vue'
 import CustomerProfileMenuButton from './CustomerProfileMenuButton.vue'
 import FloatingCartButton from './FloatingCartButton.vue'
 import FeedbackTrigger from '@/components/feedback/FeedbackTrigger.vue'
+import CategoryNav from '@/components/storefront/CategoryNav.vue'
+import HeroCarousel from '@/components/storefront/HeroCarousel.vue'
+import PromotionsCarousel from '@/components/storefront/PromotionsCarousel.vue'
+import StorefrontButton from '@/components/storefront/StorefrontButton.vue'
+import StorefrontFooter from '@/components/storefront/StorefrontFooter.vue'
+import StorefrontHeader from '@/components/storefront/StorefrontHeader.vue'
+import StorefrontSkeleton from '@/components/storefront/StorefrontSkeleton.vue'
 import ProductCard from './ProductCard.vue'
 import ProductPagination from './ProductPagination.vue'
-import {
-  MagnifyingGlassIcon,
-  ShoppingBagIcon,
-} from '@heroicons/vue/24/outline'
 import { useCart } from '@/composables/useCart'
 import { useCurrentStore } from '@/composables/useCurrentStore'
 import { useCustomerFeedback } from '@/composables/useCustomerFeedback'
@@ -470,6 +314,9 @@ import { useCustomerProfile } from '@/composables/useCustomerProfile'
 import { useProductSearch } from '@/composables/useProductSearch'
 import { usePublicStorefrontAppearance } from '@/composables/usePublicStorefrontAppearance'
 import { useStoreTheme } from '@/composables/useStoreTheme'
+import { useDialogA11y } from '@/composables/useDialogA11y'
+import { useStorefrontOverlay } from '@/composables/useStorefrontOverlay'
+import { useStorefrontDocumentMeta } from '@/composables/useStorefrontDocumentMeta'
 import { useToast } from '@/composables/useToast'
 import type { Category } from '@/schemas/category.schema'
 import { authService } from '@/services/auth.service'
@@ -489,7 +336,6 @@ import type {
   ProductVariant,
 } from '@/types/product'
 import type { PublicStorefrontBanner } from '@/types/store'
-import { formatBRL } from '@/utils/formatters'
 import { applyStorefrontFavicon } from '@/utils/storefrontFavicon'
 
 function parseNumberParam(
@@ -536,6 +382,23 @@ const { selectedStore, fetchCurrentStore } = useCurrentStore()
 const publicStoreSlug = computed(() => currentRouteStoreSlug.value || selectedStore.value?.slug || null)
 const { appearance: storefrontAppearance } = usePublicStorefrontAppearance(publicStoreSlug)
 const storeBranding = useStoreTheme(selectedStore, storefrontAppearance)
+
+// Per-store document metadata, restored to generic values on leaving the
+// storefront so another area never inherits this store's name.
+useStorefrontDocumentMeta({
+  storeName: computed(() => (selectedStore.value ? storeBranding.value.name : null)),
+  description: computed(
+    () => storefrontAppearance.value?.tagline || storeBranding.value.tagline || null,
+  ),
+})
+
+const catalogRoute = computed(() => {
+  const storeSlug = currentRouteStoreSlug.value
+  return storeSlug
+    ? { name: PublicRoutes.StoreProducts, params: { storeSlug } }
+    : { name: PublicRoutes.Products }
+})
+
 const categories = ref<Category[]>([])
 const storefrontBanners = ref<PublicStorefrontBanner[]>([])
 const deliveryRegions = ref<DeliveryRegion[]>([])
@@ -560,6 +423,11 @@ const sortBy = ref<ProductSortOption>('featured')
 const isFiltersOpen = ref(false)
 const draftCategoryId = ref<number | undefined>(undefined)
 const draftInStockOnly = ref(false)
+const filtersSheetRef = ref<HTMLElement | null>(null)
+const filtersCloseRef = ref<HTMLElement | null>(null)
+useDialogA11y(isFiltersOpen, () => handleCancelFilters(), filtersSheetRef, filtersCloseRef)
+// Registers the overlay: locks body scroll and moves the toast host aside.
+useStorefrontOverlay(isFiltersOpen)
 
 const initialFilters = parseFiltersFromQuery(route.query)
 const initialPage = parsePageFromQuery(route.query)
@@ -603,7 +471,36 @@ const {
   getProductQuantity,
 } = useCart()
 
-let isSyncingRouteState = false
+// The URL query is a downstream projection of `filters` + `page` while this
+// view is mounted -- the component owns that state and pushes every change out
+// with `router.replace`. The URL is only read *back* into the filters on a
+// navigation the component did not itself initiate (a browser back/forward, or
+// a deep link opened while already on this page).
+//
+// `pendingRouteWrites` holds the serialized queries we have asked the router to
+// write and not yet seen echoed through the `route.query` watcher. It replaces
+// a single `isSyncingRouteState` boolean that was set synchronously and cleared
+// in an async `.finally`: with overlapping `router.replace` calls during fast
+// typing (each navigation also awaits an async `beforeEach` guard) that boolean
+// could be back down when an *earlier* replace's echo finally arrived, so the
+// route watcher adopted a stale query and overwrote text the user had since
+// typed -- intermittently firing the catalog request with a truncated search
+// term or none at all, and, when the echo cascaded into a fresh `router.replace`
+// mid-click, cancelling the navigation to the product being opened. Matching on
+// the exact query string is order-independent, so none of that can happen.
+const pendingRouteWrites = new Set<string>()
+
+function serializeQuery(query: LocationQuery | Record<string, string>): string {
+  const entries = Object.entries(query)
+    .map(([key, value]) => {
+      const normalized = Array.isArray(value) ? value[0] : value
+      return [key, normalized == null ? '' : String(normalized)] as const
+    })
+    .filter(([, value]) => value !== '')
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+
+  return JSON.stringify(entries)
+}
 
 const displayedProducts = computed(() => {
   const nextProducts = [...products.value]
@@ -624,18 +521,80 @@ const displayedProducts = computed(() => {
   }
 })
 
+const selectedCategoryName = computed(
+  () => categories.value.find((category) => category.id === filters.value.categoryId)?.name ?? null,
+)
+
+const emptyStateTitle = computed(() => {
+  if (filters.value.categoryId) {
+    return selectedCategoryName.value
+      ? `Nenhum produto em ${selectedCategoryName.value}`
+      : 'Nenhum produto nesta categoria'
+  }
+  return 'Nenhum produto encontrado'
+})
+
+const emptyStateMessage = computed(() => {
+  if (filters.value.search) {
+    return `Nada corresponde a "${filters.value.search}".`
+  }
+  if (filters.value.categoryId) {
+    return 'Ainda nao ha produtos visiveis nesta categoria.'
+  }
+  return 'Tente outra categoria ou remova os filtros.'
+})
+
+function handleViewAllProducts(): void {
+  updateFilters({ categoryId: undefined })
+}
+
 const isWhatsAppConfigured = computed(() => storeWhatsAppPhone.value.length > 0)
 const isCompactDensity = computed(() => storefrontAppearance.value?.density === 'compact')
 
-const heroAppearance = computed(() => {
-  const appearance = storefrontAppearance.value
+// Applied filters other than free-text search, shown as a discreet count
+// on the header's filter trigger.
+const activeFilterCount = computed(
+  () => (filters.value.categoryId ? 1 : 0) + (filters.value.inStockOnly ? 1 : 0),
+)
 
+// Ciclo 9: the hero carousel reads from the placement-scoped banner list.
+// A store that never touched the new multi-banner admin UI keeps working
+// through the legacy single hero_* image -- rendered as a one-slide
+// "carousel" (no controls/autoplay, same as any single hero banner) so nothing
+// a merchant already configured disappears. Once at least one hero-placement
+// banner exists, that list takes over entirely.
+const heroBannersFromApi = computed(() =>
+  storefrontBanners.value.filter((banner) => banner.placement === 'hero'),
+)
+const legacyHeroBanner = computed<PublicStorefrontBanner | null>(() => {
+  const appearance = storefrontAppearance.value
   if (!appearance?.hero_enabled || !appearance.hero_image_desktop) {
     return null
   }
 
-  return appearance
+  return {
+    placement: 'hero',
+    image_url: appearance.hero_image_desktop,
+    image_url_mobile: appearance.hero_image_mobile,
+    alt_text: appearance.hero_alt_text,
+    title: appearance.hero_title,
+    subtitle: appearance.hero_subtitle,
+    cta_text: appearance.hero_cta_text,
+    button_url: appearance.hero_cta_url,
+    position: 0,
+    status: 'active',
+  }
 })
+const heroBanners = computed(() =>
+  heroBannersFromApi.value.length
+    ? heroBannersFromApi.value
+    : legacyHeroBanner.value
+      ? [legacyHeroBanner.value]
+      : [],
+)
+const promotionBanners = computed(() =>
+  storefrontBanners.value.filter((banner) => banner.placement === 'promotion'),
+)
 
 const liveRegionMessage = computed(() => {
   if (isInitialLoading.value) {
@@ -684,17 +643,23 @@ function buildQueryFromState(): Record<string, string> {
 }
 
 function syncRouteQuery(): void {
-  const currentQuery = JSON.stringify(route.query)
-  const nextQuery = JSON.stringify(buildQueryFromState())
+  const nextQuery = buildQueryFromState()
+  const nextKey = serializeQuery(nextQuery)
 
-  if (currentQuery === nextQuery) {
+  if (serializeQuery(route.query) === nextKey) {
     return
   }
 
-  isSyncingRouteState = true
-  router.replace({ query: buildQueryFromState() }).finally(() => {
-    isSyncingRouteState = false
-  })
+  pendingRouteWrites.add(nextKey)
+  router
+    .replace({ query: nextQuery })
+    .catch(() => {
+      // A newer navigation (e.g. opening a product) supersedes this replace --
+      // expected during fast interaction, not an error worth surfacing.
+    })
+    .finally(() => {
+      pendingRouteWrites.delete(nextKey)
+    })
 }
 
 async function loadCategories(): Promise<void> {
@@ -792,24 +757,34 @@ watch(
     page.value,
   ],
   () => {
-    if (!isSyncingRouteState) {
-      syncRouteQuery()
-    }
+    syncRouteQuery()
   }
 )
 
 watch(
   () => route.query,
   (query) => {
-    if (isSyncingRouteState) {
+    const incomingKey = serializeQuery(query)
+
+    // Our own write coming back around: the filters already reflect this query
+    // (or a newer edit that flushes on its own). Consume the marker, stop.
+    if (pendingRouteWrites.has(incomingKey)) {
+      pendingRouteWrites.delete(incomingKey)
       return
     }
 
+    // URL already matches the live state -- a redundant re-emit, or a write
+    // that outran its marker being cleared. Nothing to adopt.
+    if (serializeQuery(buildQueryFromState()) === incomingKey) {
+      return
+    }
+
+    // Genuine external navigation (back/forward, or a deep link opened while
+    // already on this page): the URL is now the source of truth.
     const nextFilters = parseFiltersFromQuery(query)
     const nextPageValue = parsePageFromQuery(query)
-    const filtersChanged = JSON.stringify(filters.value) !== JSON.stringify(nextFilters)
 
-    if (filtersChanged) {
+    if (JSON.stringify(filters.value) !== JSON.stringify(nextFilters)) {
       updateFilters(nextFilters)
       return
     }
@@ -862,10 +837,24 @@ onMounted(async () => {
   ])
 })
 
+// Standard "return focus to the trigger" pattern for a dialog/sheet: the
+// element that opened it is whatever had focus right before -- normally the
+// header's "Abrir filtros" button. useDialogA11y already moves focus *into*
+// the sheet on open; closing it removes the sheet from the DOM, which would
+// otherwise silently drop focus to <body> (a real keyboard-nav regression,
+// separate from the scroll-jump bug this cycle also fixes).
+let filtersTriggerElement: HTMLElement | null = null
+
 function openFilters(): void {
+  filtersTriggerElement = document.activeElement as HTMLElement | null
   draftCategoryId.value = filters.value.categoryId
   draftInStockOnly.value = filters.value.inStockOnly ?? false
   isFiltersOpen.value = true
+}
+
+function restoreFocusToFiltersTrigger(): void {
+  filtersTriggerElement?.focus()
+  filtersTriggerElement = null
 }
 
 function toggleFilters(): void {
@@ -881,9 +870,12 @@ function handleQuickCategory(categoryId: number | undefined): void {
   draftCategoryId.value = categoryId
 }
 
-function handleSearchInput(event: Event): void {
-  const target = event.target as HTMLInputElement
-  updateFilters({ search: target.value })
+// The always-visible category bar (Ciclo 9) applies immediately, unlike the
+// filters sheet's staged draft/"Ver resultados" flow -- selecting a category
+// here is the whole action, so it writes straight to the live filter (which
+// is already what drives the URL query and re-fetch).
+function handleCategorySelect(categoryId: number | undefined): void {
+  updateFilters({ categoryId })
 }
 
 function handleStockFilterToggle(event: Event): void {
@@ -897,14 +889,22 @@ function handleSaveFilters(): void {
     inStockOnly: draftInStockOnly.value,
   })
   isFiltersOpen.value = false
+  restoreFocusToFiltersTrigger()
 }
 
 function handleCancelFilters(): void {
+  // Dismiss = discard staged changes; they re-sync from live filters on reopen.
+  draftCategoryId.value = filters.value.categoryId
+  draftInStockOnly.value = filters.value.inStockOnly ?? false
   isFiltersOpen.value = false
+  restoreFocusToFiltersTrigger()
 }
 
 function handleClearFilters(): void {
   clearFilters()
+  draftCategoryId.value = undefined
+  draftInStockOnly.value = false
+  isFiltersOpen.value = false
 }
 
 function handleGoToPage(pageNumber: number): void {
@@ -934,7 +934,9 @@ function handleAddToCart(
     addItem(product, quantity)
   }
   const variantLabel = variant?.name ? ` - ${variant.name}` : ''
-  toast.success(`${quantity} unidade(s) de ${product.name}${variantLabel} adicionada(s) ao pedido.`)
+  // Ciclo 8: dedup key so 3 quick adds (same or different products) update
+  // one toast in place instead of stacking on top of the item list.
+  toast.success(`${quantity} unidade(s) de ${product.name}${variantLabel} adicionada(s) ao pedido.`, undefined, 'cart-add')
 }
 
 function handleOpenDetails(product: Product): void {

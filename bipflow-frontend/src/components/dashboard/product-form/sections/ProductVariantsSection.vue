@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { PhotoIcon, PlusIcon, TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline';
+import ConfirmModal from '@/components/dashboard/layout/ConfirmModal.vue';
 import type { ProductFormData } from '@/schemas/product.schema';
 import { compressImageFile } from '@/utils/image';
 import { formatBRL } from '@/utils/formatters';
@@ -41,7 +42,8 @@ function normalizeVariantPrice(value: unknown): number | null {
 const previewUrls = new Set<string>();
 const previews = ref<string[]>([]);
 const compressingIndexes = ref<Set<number>>(new Set());
-const imageError = ref<string | null>(null);
+const imageErrors = ref<Record<number, string>>({});
+const pendingRemoveImageIndex = ref<number | null>(null);
 
 const hasVariants = computed(() => variants.value.length > 0);
 
@@ -57,6 +59,10 @@ function revokePreview(url: string | null | undefined): void {
 
   URL.revokeObjectURL(url);
   previewUrls.delete(url);
+}
+
+function isUnsavedImage(entry: ProductVariantForm['image']): boolean {
+  return entry instanceof File;
 }
 
 function toPreview(entry: ProductVariantForm['image']): string {
@@ -124,18 +130,26 @@ async function handleImageChange(index: number, event: Event): Promise<void> {
   const target = event.target as HTMLInputElement;
   const file = target.files?.[0];
 
-  if (!file) {
+  if (!file || compressingIndexes.value.has(index)) {
+    // Also guards against a second file pick landing while the first is
+    // still compressing for the same variant (double-click / slow device).
+    target.value = '';
     return;
   }
 
   target.value = '';
-  imageError.value = null;
+  const nextErrors = { ...imageErrors.value };
+  delete nextErrors[index];
+  imageErrors.value = nextErrors;
   compressingIndexes.value = new Set(compressingIndexes.value).add(index);
 
   try {
     updateVariant(index, { image: await compressImageFile(file) });
   } catch (error) {
-    imageError.value = error instanceof Error ? error.message : 'Falha ao processar a imagem.';
+    imageErrors.value = {
+      ...imageErrors.value,
+      [index]: error instanceof Error ? error.message : 'Falha ao processar a imagem.',
+    };
   } finally {
     const nextIndexes = new Set(compressingIndexes.value);
     nextIndexes.delete(index);
@@ -143,8 +157,20 @@ async function handleImageChange(index: number, event: Event): Promise<void> {
   }
 }
 
-function removeVariantImage(index: number): void {
-  updateVariant(index, { image: null });
+function requestRemoveVariantImage(index: number): void {
+  pendingRemoveImageIndex.value = index;
+}
+
+function cancelRemoveVariantImage(): void {
+  pendingRemoveImageIndex.value = null;
+}
+
+function confirmRemoveVariantImage(): void {
+  if (pendingRemoveImageIndex.value === null) {
+    return;
+  }
+  updateVariant(pendingRemoveImageIndex.value, { image: null });
+  pendingRemoveImageIndex.value = null;
 }
 
 watch(variants, (nextVariants) => {
@@ -165,10 +191,10 @@ onUnmounted(() => {
           Variantes de cor
         </h3>
         <p class="text-[9px] font-bold uppercase tracking-widest text-bip-muted">
-          Nome, cor, preco e imagem propria por opcao
+          Nome, cor, preço e imagem própria por opção
         </p>
         <p v-if="hasVariants" class="mt-1 text-[10px] font-semibold normal-case tracking-normal text-bip-muted">
-          Preco base do produto: {{ basePriceLabel }}
+          Preço base do produto: {{ basePriceLabel }}
         </p>
       </div>
 
@@ -187,7 +213,10 @@ onUnmounted(() => {
       <div
         v-for="(variant, index) in variants"
         :key="variant.id ?? `new-${index}`"
-        class="grid gap-3 rounded-xl border border-[#E5E7EB] bg-white p-3 sm:grid-cols-[4.5rem_minmax(0,1fr)_auto] sm:items-center"
+        class="rounded-xl border border-[#E5E7EB] bg-white p-3"
+      >
+      <div
+        class="grid gap-3 sm:grid-cols-[4.5rem_minmax(0,1fr)_auto] sm:items-center"
       >
         <div class="relative h-[4.5rem] w-[4.5rem] overflow-hidden rounded-xl border border-dashed border-[#D1D5DB] bg-zinc-50">
           <img
@@ -200,10 +229,18 @@ onUnmounted(() => {
             <PhotoIcon class="h-6 w-6" aria-hidden="true" />
           </div>
 
+          <span
+            v-if="isUnsavedImage(variant.image)"
+            class="absolute bottom-1 left-1 z-10 rounded-full bg-black/70 px-1.5 py-0.5 text-[7px] font-black uppercase tracking-widest text-white"
+          >
+            Novo
+          </span>
+
           <input
             type="file"
             accept="image/jpeg, image/png, image/webp"
-            class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            class="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-wait"
+            :disabled="compressingIndexes.has(index)"
             :aria-label="`Enviar imagem da variante ${variant.name || index + 1}`"
             @change="handleImageChange(index, $event)"
           />
@@ -213,7 +250,7 @@ onUnmounted(() => {
             type="button"
             class="absolute right-1 top-1 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full bg-black/70 text-white transition hover:bg-black"
             :aria-label="`Remover imagem da variante ${variant.name || index + 1}`"
-            @click.stop="removeVariantImage(index)"
+            @click.stop="requestRemoveVariantImage(index)"
           >
             <XMarkIcon class="h-4 w-4" aria-hidden="true" />
           </button>
@@ -243,7 +280,7 @@ onUnmounted(() => {
 
           <label class="block">
             <span class="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-bip-muted">
-              Preco (R$)
+              Preço (R$)
             </span>
             <input
               :value="variant.price ?? ''"
@@ -253,7 +290,7 @@ onUnmounted(() => {
               inputmode="decimal"
               class="h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 text-sm text-[#05050A] outline-none transition focus:border-[#111827] focus:ring-2 focus:ring-[#F3F4F6]"
               :placeholder="basePriceLabel"
-              :aria-label="`Preco da variante ${variant.name || index + 1}. Em branco usa o preco base.`"
+              :aria-label="`Preço da variante ${variant.name || index + 1}. Em branco usa o preço base.`"
               @input="updateVariant(index, { price: normalizeVariantPrice(($event.target as HTMLInputElement).value) })"
             />
           </label>
@@ -307,6 +344,14 @@ onUnmounted(() => {
           <TrashIcon class="h-5 w-5" aria-hidden="true" />
         </button>
       </div>
+
+      <p
+        v-if="imageErrors[index]"
+        class="mt-2 text-[9px] font-bold uppercase tracking-widest text-red-600"
+      >
+        {{ imageErrors[index] }}
+      </p>
+      </div>
     </div>
 
     <button
@@ -320,10 +365,19 @@ onUnmounted(() => {
     </button>
 
     <Transition name="slide-up">
-      <p v-if="error || imageError" class="text-center text-[9px] font-black uppercase tracking-widest text-[#111827]">
-        {{ imageError || error }}
+      <p v-if="error" class="text-center text-[9px] font-black uppercase tracking-widest text-[#111827]">
+        {{ error }}
       </p>
     </Transition>
+
+    <ConfirmModal
+      :show="pendingRemoveImageIndex !== null"
+      title="Remover imagem"
+      message="A imagem desta variante será removida. Esta ação não afeta o restante dos dados da variante."
+      confirm-label="Remover imagem"
+      @close="cancelRemoveVariantImage"
+      @confirm="confirmRemoveVariantImage"
+    />
   </section>
 </template>
 

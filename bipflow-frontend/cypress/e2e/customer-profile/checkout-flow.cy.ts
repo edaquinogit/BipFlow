@@ -49,6 +49,8 @@ describe('Storefront checkout', () => {
       .click()
 
     cy.get('[data-cy="open-cart-button"]').click()
+    // Step 1 -> Step 2 (checkout is a two-step drawer since Cycle 7).
+    cy.get('[aria-label="Carrinho de pedido"] [data-cy="checkout-continue-button"]').click()
 
     // Delivery defaults to "Receber em casa", so a full address is needed too.
     cy.get('input[autocomplete="name"]').type('Convidado Cypress')
@@ -79,8 +81,12 @@ describe('Storefront checkout', () => {
     cy.visit('/l/default/perfil/criar')
 
     const email = `cliente.completo.${Date.now()}@example.com`
+    // Unique per run, same reasoning as the guest test above: CheckoutCustomerThrottle
+    // keys anonymous/guest-identity checkout attempts by the submitted phone, so a
+    // fixed number 429s on repeat local runs within the throttle window.
+    const phone = `1198${Date.now().toString().slice(-8)}`
     cy.get('input[autocomplete="name"]').type('Cliente Perfil Completo')
-    cy.get('input[autocomplete="tel"]').type('11988887777')
+    cy.get('input[autocomplete="tel"]').type(phone)
     cy.get('input[type="email"]').type(email)
     cy.get('input[autocomplete="street-address"]').should('not.exist')
     cy.get('input[autocomplete="address-level3"]').should('not.exist')
@@ -97,13 +103,23 @@ describe('Storefront checkout', () => {
       .first()
       .click()
     cy.get('[data-cy="open-cart-button"]').click()
+    // Step 1 -> Step 2 (checkout is a two-step drawer since Cycle 7).
+    cy.get('[aria-label="Carrinho de pedido"] [data-cy="checkout-continue-button"]').click()
 
     // The profile already supplies identity. The first delivery still needs
     // an address, and the drawer promises to save it for future orders.
     cy.get('input[autocomplete="name"]').should('not.exist')
     cy.get('input[autocomplete="street-address"]').should('exist')
     cy.contains('Ele será salvo no seu perfil para os próximos pedidos.').should('exist')
-    cy.get('[data-cy="checkout-submit-button"]').should('be.disabled')
+
+    // Ciclo 8: a missing address is corrigible, not structural -- the button
+    // stays enabled so the click can reveal exactly what's missing.
+    cy.intercept('POST', '**/api/v1/checkout/whatsapp/').as('blockedAttempt')
+    cy.get('[data-cy="checkout-submit-button"]').should('be.enabled').click()
+    cy.contains('Informe o endereço.').should('be.visible')
+    cy.contains('Revise os campos destacados.').should('be.visible')
+    cy.get('input[autocomplete="street-address"]').should('be.focused')
+    cy.get('@blockedAttempt.all').should('have.length', 0)
 
     cy.get('input[autocomplete="street-address"]').type('Rua Perfil, 10')
     cy.get('input[autocomplete="address-level3"]').type('Bairro Perfil')
@@ -125,6 +141,8 @@ describe('Storefront checkout', () => {
       .first()
       .click()
     cy.get('[data-cy="open-cart-button"]').click()
+    // Step 1 -> Step 2 (checkout is a two-step drawer since Cycle 7).
+    cy.get('[aria-label="Carrinho de pedido"] [data-cy="checkout-continue-button"]').click()
 
     cy.get('input[autocomplete="name"]').should('not.exist')
     cy.get('input[autocomplete="street-address"]').should('not.exist')
@@ -136,8 +154,10 @@ describe('Storefront checkout', () => {
     cy.visit('/l/default/perfil/criar')
 
     const email = `cliente.sem.endereco.${Date.now()}@example.com`
+    // Unique per run -- same CheckoutCustomerThrottle reasoning as above.
+    const phone = `1197${Date.now().toString().slice(-8)}`
     cy.get('input[autocomplete="name"]').type('Cliente Sem Endereco')
-    cy.get('input[autocomplete="tel"]').type('11977776666')
+    cy.get('input[autocomplete="tel"]').type(phone)
     cy.get('input[type="email"]').type(email)
     // Address left blank on purpose -- it is not required to create a profile.
     cy.get('input[autocomplete="new-password"]').eq(0).type('SenhaForte123')
@@ -152,12 +172,18 @@ describe('Storefront checkout', () => {
       .first()
       .click()
     cy.get('[data-cy="open-cart-button"]').click()
+    // Step 1 -> Step 2 (checkout is a two-step drawer since Cycle 7).
+    cy.get('[aria-label="Carrinho de pedido"] [data-cy="checkout-continue-button"]').click()
 
     // Identity comes from the profile (hidden); address does not exist there,
     // so it still needs to be typed -- same fields a guest would see.
     cy.get('input[autocomplete="name"]').should('not.exist')
     cy.get('input[autocomplete="street-address"]').should('exist')
-    cy.get('[data-cy="checkout-submit-button"]').should('be.disabled')
+
+    // Ciclo 8: same corrigible-block model -- enabled, click reveals errors.
+    cy.get('[data-cy="checkout-submit-button"]').should('be.enabled').click()
+    cy.contains('Informe o endereço.').should('be.visible')
+    cy.get('input[autocomplete="street-address"]').should('be.focused')
 
     cy.get('input[autocomplete="street-address"]').type('Rua Avulsa, 5')
     cy.get('input[autocomplete="address-level3"]').type('Bairro Avulso')

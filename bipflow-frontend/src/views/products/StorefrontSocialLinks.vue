@@ -44,9 +44,9 @@ const visibleLinks = computed(() =>
       :href="link.url"
       target="_blank"
       rel="noopener noreferrer"
-      class="inline-flex items-center gap-1.5 text-xs font-semibold text-[#6B7280] transition hover:text-[#05050A]"
+      class="inline-flex min-h-11 items-center gap-1.5 text-[0.8125rem] font-medium text-[var(--store-text-muted)] transition hover:text-[var(--store-brand-on-light)]"
     >
-      <GlobeAltIcon class="h-3.5 w-3.5" aria-hidden="true" />
+      <GlobeAltIcon class="h-4 w-4" aria-hidden="true" />
       {{ link.label }}
     </a>
   </nav>

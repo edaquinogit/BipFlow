@@ -1,5 +1,5 @@
 
-import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { createRouter, createWebHistory, type RouteRecordRaw, type RouterScrollBehavior } from 'vue-router'
 import { authRoutes, AuthRouteNames, customerLoginPath } from './auth.routes'
 import { dashboardRoutes, DashboardRoutes } from './dashboard.routes'
 import { errorRoutes } from './error.routes'
@@ -21,17 +21,31 @@ const routes: RouteRecordRaw[] = [
   ...publicRoutes
 ]
 
+/**
+ * Regression (Ciclo 9): a query-only navigation on the same page -- category,
+ * search, stock filter or page number changes on /produtos -- used to force
+ * `{ top: 0 }` because it has no `savedPosition` and no hash, same as a real
+ * cross-page navigation. `to.path` ignores the query string, so comparing it
+ * to `from.path` is what tells the two apart: only a real path change (a
+ * genuine "go to another page", including a different store's `/l/:slug`
+ * path) still scrolls to top; a same-path query change now preserves scroll.
+ */
+export const resolveScrollBehavior: RouterScrollBehavior = (to, from, savedPosition) => {
+  // Se houver posição salva (ex: botão voltar), retorna para ela
+  if (savedPosition) return savedPosition
+  // Se a rota tiver um hash (ex: #contato), foca no elemento
+  if (to.hash) return { el: to.hash, behavior: 'smooth' }
+  // Mesma rota (só a query mudou -- filtros, categoria, busca, paginação):
+  // preserva a posição atual.
+  if (to.path === from.path) return false
+  // Navegação real para outra pagina: topo da página
+  return { top: 0, behavior: 'smooth' }
+}
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
-  scrollBehavior(to, _from, savedPosition) {
-    // Se houver posição salva (ex: botão voltar), retorna para ela
-    if (savedPosition) return savedPosition
-    // Se a rota tiver um hash (ex: #contato), foca no elemento
-    if (to.hash) return { el: to.hash, behavior: 'smooth' }
-    // Caso contrário, topo da página
-    return { top: 0, behavior: 'smooth' }
-  }
+  scrollBehavior: resolveScrollBehavior,
 })
 
 /**

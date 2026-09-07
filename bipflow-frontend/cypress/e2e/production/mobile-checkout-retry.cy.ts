@@ -212,6 +212,8 @@ describe('production mobile checkout retry', () => {
       .should('be.enabled')
       .click()
     cy.get('[data-cy="open-cart-button"]').click()
+    // Step 1 -> Step 2 (checkout is a two-step drawer since Cycle 7).
+    cy.get('[aria-label="Carrinho de pedido"] [data-cy="checkout-continue-button"]').click()
 
     cy.get('input[autocomplete="name"]').type('Cliente Mobile')
     cy.get('input[autocomplete="tel"]').type('11999990000')

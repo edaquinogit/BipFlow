@@ -40,16 +40,22 @@ describe('Variant pricing smoke (real backend)', () => {
 
     cy.contains('button', /Adicionar/).click()
 
-    cy.get('button[aria-label^="Abrir carrinho com"]', { timeout: 10000 }).click()
+    cy.get('[data-cy="open-cart-button"]', { timeout: 10000 }).click()
     cy.get('[aria-label="Carrinho de pedido"]').as('cart')
+    // Step 1 (review): the selected variant + its per-unit price are visible.
     cy.get('@cart').should('contain', 'GG')
     cy.get('@cart').should('contain', `${GG_PRICE} / unidade`)
+    cy.get('@cart').find('[data-cy="checkout-continue-button"]').click()
 
-    // Pickup keeps the flow minimal -- no delivery region / address.
+    // Step 2 (details). Pickup keeps the flow minimal -- no region / address.
     cy.get('@cart').contains('label', 'Entrega').find('select').select('pickup')
     cy.get('@cart').find('input[autocomplete="name"]').type('Cliente Variante')
     cy.get('@cart').find('input[autocomplete="tel"]').type(phone)
 
+    // Ciclo 8: Produtos now lives in the body summary, not the footer
+    // (pickup has no Frete row); the footer's Total still reflects it too
+    // since there is no delivery fee to add on top.
+    cy.get('@cart').find('[data-cy="checkout-summary"]').should('contain', GG_PRICE)
     cy.get('@cart').find('footer').should('contain', GG_PRICE)
 
     stubWindowOpen()

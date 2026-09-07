@@ -54,11 +54,12 @@ describe('Critical purchase smoke (real backend)', () => {
     cy.get('button[aria-label="Aumentar quantidade"]').click()
     cy.contains('button', `Adicionar ${QTY}`).click()
 
-    // 4. Open the cart (floating button on the detail page) and confirm the
-    //    subtotal the UI computed.
-    cy.get('button[aria-label^="Abrir carrinho com"]', { timeout: 10000 }).click()
+    // 4. Open the cart (step 1: review) and confirm the subtotal the UI
+    //    computed, then advance to the details step.
+    cy.get('[data-cy="open-cart-button"]', { timeout: 10000 }).click()
     cy.get('[aria-label="Carrinho de pedido"]').as('cart')
     cy.get('@cart').find('footer').should('contain', EXPECTED_SUBTOTAL.replace('.', ','))
+    cy.get('@cart').find('[data-cy="checkout-continue-button"]').click()
 
     // 5. Delivery is the default method -- pick the seeded region and confirm
     //    the fee + recomputed total the UI shows.
@@ -71,8 +72,11 @@ describe('Critical purchase smoke (real backend)', () => {
         expect(centro, 'seeded "Centro" region option').to.exist
         cy.wrap($select).select((centro as HTMLOptionElement).value)
       })
-    cy.get('@cart').find('footer').should('contain', EXPECTED_FEE.replace('.', ','))
+    // Ciclo 8: on the 'details' step, Produtos/Frete moved out of the footer
+    // into the compact body summary -- the footer now shows Total only.
+    cy.get('@cart').find('[data-cy="checkout-summary"]').should('contain', EXPECTED_FEE.replace('.', ','))
     cy.get('@cart').find('footer').should('contain', EXPECTED_TOTAL.replace('.', ','))
+    cy.get('@cart').find('footer').should('not.contain', 'Frete')
 
     // 6. Complete the mandatory guest fields.
     cy.get('@cart').find('input[autocomplete="name"]').type('Cliente Smoke')

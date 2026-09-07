@@ -3,13 +3,13 @@
     <button
       v-if="itemCount > 0"
       type="button"
-      class="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-40 inline-flex h-14 items-center justify-center gap-2 rounded-full bg-[var(--store-text)] px-4 pr-5 text-white shadow-[0_18px_35px_-18px_rgba(5,5,10,0.8)] ring-2 ring-white transition duration-200 hover:-translate-y-0.5 hover:bg-[var(--store-primary)] focus:outline-none focus-visible:ring-4 focus-visible:ring-[var(--store-primary-soft)] active:translate-y-0 sm:bottom-[calc(1.5rem+env(safe-area-inset-bottom))] sm:right-6"
+      class="storefront-primary-button fixed bottom-[calc(0.875rem+env(safe-area-inset-bottom))] right-4 z-40 inline-flex h-12 items-center justify-center gap-2 rounded-[var(--store-radius-md)] px-4 text-sm font-semibold shadow-[var(--shadow-sf-overlay)] transition focus:outline-none sm:right-6 lg:hidden"
       :aria-label="cartAriaLabel"
       @click="$emit('openCart')"
     >
       <ShoppingCartIcon class="h-5 w-5" aria-hidden="true" />
-      <span class="text-sm font-semibold">Ver pedido</span>
-      <span class="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-white px-1.5 text-[11px] font-bold leading-none text-[var(--store-text)]">
+      <span>Ver pedido</span>
+      <span class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--store-brand-contrast)] px-1 text-[0.6875rem] font-bold leading-none text-[var(--store-brand)]">
         {{ visibleItemCount }}
       </span>
     </button>

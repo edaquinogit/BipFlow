@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useToast } from '@/composables/useToast';
+import { isStorefrontOverlayOpen } from '@/composables/useStorefrontOverlay';
 import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
@@ -44,7 +45,10 @@ const toastConfig = {
       v-if="toasts.length"
       name="toast-list"
       tag="div"
-      class="pointer-events-none fixed inset-x-3 top-3 z-50 flex flex-col gap-3 sm:inset-x-auto sm:right-4 sm:top-4 sm:w-[min(26rem,calc(100vw-2rem))]"
+      class="pointer-events-none fixed z-50 flex flex-col gap-3 sm:w-[min(26rem,calc(100vw-2rem))]"
+      :class="isStorefrontOverlayOpen
+        ? 'inset-x-3 top-[6rem] sm:inset-x-auto sm:left-4 sm:right-auto sm:top-4'
+        : 'inset-x-3 top-3 sm:inset-x-auto sm:right-4 sm:top-4'"
       data-cy="toast-container"
     >
       <div

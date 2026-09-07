@@ -53,16 +53,17 @@ function buildMotionVars(appearance: ThemeAppearance | null | undefined): Record
 
   if (appearance?.motion_intensity === 'subtle') {
     return {
-      '--motion-fast': '120ms',
-      '--motion-base': '180ms',
-      '--motion-slow': '240ms',
+      '--motion-fast': '100ms',
+      '--motion-base': '140ms',
+      '--motion-slow': '180ms',
     }
   }
 
+  // Common transitions stay in the ~120-220ms band (Ciclo 1 motion budget).
   return {
-    '--motion-fast': '150ms',
-    '--motion-base': '250ms',
-    '--motion-slow': '350ms',
+    '--motion-fast': '120ms',
+    '--motion-base': '160ms',
+    '--motion-slow': '220ms',
   }
 }
 

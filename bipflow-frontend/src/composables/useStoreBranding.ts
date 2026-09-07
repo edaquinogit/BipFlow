@@ -1,5 +1,6 @@
 import { computed, type ComputedRef, type Ref } from 'vue'
 import type { Store, StoreStatus, StoreTheme } from '@/types/store'
+import { buildStorefrontColorTokens, mix } from '@/utils/colorContrast'
 
 const FALLBACK_LOGO_URL = '/brand-logo.png'
 
@@ -49,6 +50,18 @@ export function buildStoreBranding(store: Store | null | undefined): StoreBrandi
   const isActive = store?.is_active ?? true
   const status = store?.status ?? (isActive ? 'active' : 'inactive')
 
+  // Contrast-safe token set: background / surface / text always resolve to a
+  // legible light base, and every brand-derived value is computed or checked
+  // (see utils/colorContrast.ts) so a merchant colour can personalise actions
+  // and accents but can never destroy legibility.
+  const safe = buildStorefrontColorTokens({
+    background: theme.background,
+    surface: theme.surface,
+    text: theme.text,
+    muted: theme.muted,
+    brand: theme.primary,
+  })
+
   return {
     name: sanitizeText(store?.display_name, sanitizeText(store?.name, 'Sua loja')),
     slug: sanitizeText(store?.slug, ''),
@@ -60,12 +73,33 @@ export function buildStoreBranding(store: Store | null | undefined): StoreBrandi
     statusLabel: status === 'active' ? 'Ativa' : 'Inativa',
     theme,
     cssVars: {
-      '--store-primary': theme.primary,
+      // Safe foundation tokens (Ciclo 1) -- the storefront shell reads these.
+      '--store-bg': safe.bg,
+      '--store-surface': safe.surface,
+      '--store-text': safe.text,
+      '--store-text-muted': safe.textMuted,
+      '--store-border': safe.border,
+      '--store-brand': safe.brand,
+      '--store-brand-contrast': safe.brandContrast,
+      '--store-brand-strong': safe.brandStrong,
+      '--store-brand-soft': safe.brandSoft,
+      '--store-brand-ink': safe.brandInk,
+      '--store-brand-on-light': safe.brandOnLight,
+      '--store-brand-on-light-contrast': safe.brandOnLightContrast,
+      '--store-focus': safe.focus,
+      // Backwards-compatible aliases so existing storefront components
+      // (ProductCard, CartDrawer, ...) inherit the safe palette unchanged.
+      // These override the color-mix() derivations in storefront-theme.css.
+      // NOTE: in this codebase `--store-primary` is used mostly as an accent
+      // for *text / borders / rings on the light surface*, so it maps to the
+      // AA-checked `brandOnLight`; the raw vivid brand stays available as
+      // `--store-brand` for the solid primary button fill.
+      '--store-primary': safe.brandOnLight,
+      '--store-primary-hover': mix(safe.brandOnLight, '#000000', 0.12),
+      '--store-primary-soft': safe.brandSoft,
       '--store-accent': theme.accent,
-      '--store-background': theme.background,
-      '--store-surface': theme.surface,
-      '--store-text': theme.text,
-      '--store-muted': theme.muted,
+      '--store-background': safe.bg,
+      '--store-muted': safe.textMuted,
     },
   }
 }

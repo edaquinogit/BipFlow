@@ -2,6 +2,8 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, nextTick, ref } from 'vue'
 import ProductsView from '../ProductsView.vue'
+import HeroCarousel from '@/components/storefront/HeroCarousel.vue'
+import PromotionsCarousel from '@/components/storefront/PromotionsCarousel.vue'
 import { useProductSearch } from '@/composables/useProductSearch'
 import { useCart } from '@/composables/useCart'
 import { useCurrentStore } from '@/composables/useCurrentStore'
@@ -62,6 +64,10 @@ vi.mock('@/services/storefront-appearance.service', () => ({
 vi.mock('vue-router', () => ({
   useRoute: vi.fn(),
   useRouter: vi.fn(),
+  // CustomerProfileMenuButton renders <RouterLink> once its async profile
+  // check resolves -- a plain stub avoids depending on exact timing to
+  // decide whether any given test happens to reach that branch.
+  RouterLink: { template: '<a><slot /></a>' },
 }))
 
 const ProductCardStub = defineComponent({
@@ -271,7 +277,7 @@ describe('ProductsView', () => {
     load: vi.fn(),
   }
 
-  const mountView = () =>
+  const mountView = (overrides: { attachTo?: Element } = {}) =>
     mount(ProductsView, {
       global: {
         stubs: {
@@ -280,6 +286,7 @@ describe('ProductsView', () => {
           CartDrawer: CartDrawerStub,
         },
       },
+      ...overrides,
     })
 
   beforeEach(async () => {
@@ -287,6 +294,13 @@ describe('ProductsView', () => {
     vi.stubGlobal('open', windowOpen)
 
     searchState.products.value = mockProducts
+    searchState.filters.value = {
+      search: '',
+      categoryId: undefined,
+      priceMin: undefined,
+      priceMax: undefined,
+      inStockOnly: false,
+    }
     cartState.itemCount.value = 0
 
     vi.mocked(useProductSearch).mockReturnValue(searchState as any)
@@ -454,7 +468,9 @@ describe('ProductsView', () => {
     wrapper.unmount()
     vi.mocked(storefrontAppearanceService.getPublicBanners).mockResolvedValue([
       {
+        placement: 'promotion',
         image_url: 'https://cdn.example.com/promo.png',
+        image_url_mobile: '',
         alt_text: 'Promocao relampago',
         title: 'Oferta relampago',
         subtitle: 'Somente hoje',
@@ -485,6 +501,79 @@ describe('ProductsView', () => {
     expect(wrapper.find('.cart-drawer-stub').exists()).toBe(true)
   })
 
+  it('shows an always-visible category nav (not only inside the filters sheet)', () => {
+    const nav = wrapper.find('[data-cy="storefront-category-nav"]')
+    expect(nav.exists()).toBe(true)
+    expect(nav.text()).toContain('Todos')
+    expect(nav.text()).toContain('Test Category')
+  })
+
+  it('applies a category immediately from the nav, without staging it', async () => {
+    const categoryChip = wrapper
+      .find('[data-cy="storefront-category-nav"]')
+      .findAll('button')
+      .find((button) => button.text() === 'Test Category')
+
+    await categoryChip!.trigger('click')
+
+    expect(searchState.updateFilters).toHaveBeenCalledWith({ categoryId: 1 })
+  })
+
+  // Scroll-jump regression (Ciclo 9): a category change must never remount
+  // the hero/promotions carousels -- only the product grid re-renders.
+  it('does not remount the hero and promotions carousels when the category filter changes', async () => {
+    // `.vm` returns a fresh proxy wrapper on every access even for the same
+    // instance, so compare Vue's internal component uid, not the proxy
+    // object itself.
+    const heroUidBefore = wrapper.findComponent(HeroCarousel).vm.$.uid
+    const promotionsUidBefore = wrapper.findComponent(PromotionsCarousel).vm.$.uid
+
+    const categoryChip = wrapper
+      .find('[data-cy="storefront-category-nav"]')
+      .findAll('button')
+      .find((button) => button.text() === 'Test Category')
+    await categoryChip!.trigger('click')
+    // updateFilters is mocked in this suite, so drive the resulting state
+    // change the same way the real composable would.
+    searchState.filters.value = { ...searchState.filters.value, categoryId: 1 } as any
+    await nextTick()
+
+    expect(wrapper.findComponent(HeroCarousel).vm.$.uid).toBe(heroUidBefore)
+    expect(wrapper.findComponent(PromotionsCarousel).vm.$.uid).toBe(promotionsUidBefore)
+  })
+
+  it('returns focus to the filters trigger button after applying and after cancelling', async () => {
+    const attachedWrapper = mountView({ attachTo: document.body })
+    await flushPromises()
+
+    const trigger = attachedWrapper.get('[aria-label="Abrir filtros"]')
+    ;(trigger.element as HTMLElement).focus()
+    expect(document.activeElement).toBe(trigger.element)
+
+    await trigger.trigger('click')
+    const applyButton = attachedWrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Ver resultados'))
+    await applyButton!.trigger('click')
+
+    expect(document.activeElement).toBe(trigger.element)
+
+    // Same guarantee for the "cancel" (dismiss) path.
+    await trigger.trigger('click')
+    await attachedWrapper.get('[aria-label="Fechar filtros"]').trigger('click')
+    expect(document.activeElement).toBe(trigger.element)
+
+    attachedWrapper.unmount()
+  })
+
+  it('returns to "Todos" from the nav', async () => {
+    const allChip = wrapper.get('[data-cy="storefront-category-chip-all"]')
+
+    await allChip.trigger('click')
+
+    expect(searchState.updateFilters).toHaveBeenCalledWith({ categoryId: undefined })
+  })
+
   it('keeps the typed search space so compound terms can be entered naturally', async () => {
     await wrapper
       .find('input[aria-label="Buscar produtos por nome"]')
@@ -513,13 +602,12 @@ describe('ProductsView', () => {
     expect(wrapper.findComponent(CartDrawerStub).props('isOpen')).toBe(true)
   })
 
-  it('stages a quick category pick without applying it until Salvar is clicked', async () => {
+  it('stages a quick category pick without applying it until "Ver resultados"', async () => {
     await wrapper.find('[aria-label="Abrir filtros"]').trigger('click')
 
-    const buttons = wrapper.findAll('button')
-    const categoryButton = buttons.find(
-      (button) => button.text() === 'Test Category',
-    )
+    const categoryButton = wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Test Category')
 
     expect(categoryButton).toBeDefined()
 
@@ -527,10 +615,10 @@ describe('ProductsView', () => {
 
     expect(searchState.updateFilters).not.toHaveBeenCalled()
 
-    const saveButton = wrapper
+    const applyButton = wrapper
       .findAll('button')
-      .find((button) => button.text() === 'Salvar')
-    await saveButton!.trigger('click')
+      .find((button) => button.text().includes('Ver resultados'))
+    await applyButton!.trigger('click')
 
     expect(searchState.updateFilters).toHaveBeenCalledWith({
       categoryId: 1,
@@ -538,7 +626,7 @@ describe('ProductsView', () => {
     })
   })
 
-  it('stages the in-stock checkbox without applying it until Salvar is clicked', async () => {
+  it('stages the in-stock checkbox without applying it until "Ver resultados"', async () => {
     await wrapper.find('[aria-label="Abrir filtros"]').trigger('click')
 
     const stockCheckbox = wrapper.find('input[type="checkbox"]')
@@ -548,10 +636,10 @@ describe('ProductsView', () => {
 
     expect(searchState.updateFilters).not.toHaveBeenCalled()
 
-    const saveButton = wrapper
+    const applyButton = wrapper
       .findAll('button')
-      .find((button) => button.text() === 'Salvar')
-    await saveButton!.trigger('click')
+      .find((button) => button.text().includes('Ver resultados'))
+    await applyButton!.trigger('click')
 
     expect(searchState.updateFilters).toHaveBeenCalledWith({
       categoryId: undefined,
@@ -577,16 +665,13 @@ describe('ProductsView', () => {
     searchState.totalPages.value = 1
   })
 
-  it('discards staged filter changes when Cancelar is clicked', async () => {
+  it('discards staged filter changes when the sheet is dismissed', async () => {
     await wrapper.find('[aria-label="Abrir filtros"]').trigger('click')
 
     const stockCheckbox = wrapper.find('input[type="checkbox"]')
     await stockCheckbox.setValue(true)
 
-    const cancelButton = wrapper
-      .findAll('button')
-      .find((button) => button.text() === 'Cancelar')
-    await cancelButton!.trigger('click')
+    await wrapper.find('[aria-label="Fechar filtros"]').trigger('click')
 
     expect(searchState.updateFilters).not.toHaveBeenCalled()
     expect(
@@ -607,5 +692,33 @@ describe('ProductsView', () => {
     await nextTick()
 
     expect(wrapper.text()).toContain('Nenhum produto encontrado')
+  })
+
+  it('shows a category-aware empty state with a "Ver todos os produtos" action', async () => {
+    searchState.products.value = []
+    searchState.filters.value = { ...searchState.filters.value, categoryId: 1 } as any
+    await nextTick()
+
+    const emptyState = wrapper.get('[data-cy="storefront-empty-state"]')
+    expect(emptyState.text()).toContain('Test Category')
+    const viewAllButton = emptyState
+      .findAll('button')
+      .find((button) => button.text().includes('Ver todos os produtos'))
+    expect(viewAllButton).toBeDefined()
+
+    await viewAllButton!.trigger('click')
+
+    expect(searchState.updateFilters).toHaveBeenCalledWith({ categoryId: undefined })
+  })
+
+  it('does not offer "Ver todos os produtos" when the empty state has no category active', async () => {
+    searchState.products.value = []
+    await nextTick()
+
+    const emptyState = wrapper.get('[data-cy="storefront-empty-state"]')
+    const viewAllButton = emptyState
+      .findAll('button')
+      .find((button) => button.text().includes('Ver todos os produtos'))
+    expect(viewAllButton).toBeUndefined()
   })
 })
