@@ -1,21 +1,28 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
-import { authService } from '@/services/auth.service'
-import { AuthRouteNames } from '@/router/auth.routes'
-import { usePasswordStrength } from '@/composables/usePasswordStrength'
+import AuthAlert from '@/components/auth/AuthAlert.vue'
+import AuthField from '@/components/auth/AuthField.vue'
+import AuthPasswordStrength from '@/components/auth/AuthPasswordStrength.vue'
 import AuthShell from '@/components/auth/AuthShell.vue'
+import AuthSubmitButton from '@/components/auth/AuthSubmitButton.vue'
+import { usePasswordStrength } from '@/composables/usePasswordStrength'
+import { AuthRouteNames } from '@/router/auth.routes'
+import { authService } from '@/services/auth.service'
 import type { ApiError } from '@/types/auth'
 
 const isSubmitting = ref(false)
 const errorMessage = ref('')
-// Separate from errorMessage: a reminder to finish the form, not a
-// rejection -- gets the calmer amber treatment instead of the red banner.
-const validationHint = ref('')
 const successMessage = ref('')
 
 const form = reactive({
+  email: '',
+  password: '',
+  confirm_password: '',
+  store_name: '',
+})
+
+const fieldErrors = reactive({
   email: '',
   password: '',
   confirm_password: '',
@@ -38,23 +45,49 @@ const confirmRule = computed(() => ({
 
 const allPasswordRules = computed(() => [...passwordRules.value, confirmRule.value])
 
-const isFormReady = computed(() =>
-  Boolean(form.email.trim())
-  && Boolean(form.store_name.trim())
-  && isPasswordValid.value
-  && confirmRule.value.passed
-)
+const clearFieldErrors = () => {
+  fieldErrors.email = ''
+  fieldErrors.password = ''
+  fieldErrors.confirm_password = ''
+  fieldErrors.store_name = ''
+}
+
+const validateForm = (): boolean => {
+  clearFieldErrors()
+
+  if (!form.store_name.trim()) {
+    fieldErrors.store_name = 'Informe o nome da sua loja.'
+  }
+
+  const email = form.email.trim()
+  if (!email) {
+    fieldErrors.email = 'Informe seu email administrativo.'
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    fieldErrors.email = 'Informe um email válido.'
+  }
+
+  if (!form.password) {
+    fieldErrors.password = 'Crie uma senha para proteger sua conta.'
+  } else if (!isPasswordValid.value) {
+    fieldErrors.password = 'A senha ainda não atende a todos os critérios.'
+  }
+
+  if (!form.confirm_password) {
+    fieldErrors.confirm_password = 'Confirme a senha criada.'
+  } else if (!confirmRule.value.passed) {
+    fieldErrors.confirm_password = 'As senhas não coincidem.'
+  }
+
+  return Object.values(fieldErrors).every((message) => !message)
+}
 
 const extractErrorMessage = (error: unknown) => {
-  const err = error as ApiError
-  const data = err.response?.data
-
-  if (!data) return 'Nao foi possivel criar sua conta agora.'
+  const data = (error as ApiError).response?.data
+  if (!data) return 'Não foi possível criar sua conta agora. Verifique sua conexão e tente novamente.'
   if (typeof data.detail === 'string') return data.detail
   if (typeof data.message === 'string') return data.message
 
   const firstFieldError = Object.values(data).find((value) => Array.isArray(value) || typeof value === 'string')
-
   if (Array.isArray(firstFieldError)) {
     return String(firstFieldError[0] || 'Confira os dados informados.')
   }
@@ -65,13 +98,8 @@ const extractErrorMessage = (error: unknown) => {
 }
 
 const handleRegister = async () => {
-  validationHint.value = ''
   errorMessage.value = ''
-
-  if (!isFormReady.value) {
-    validationHint.value = 'Preencha o nome da loja, email, senha e confirmação seguindo os critérios de segurança.'
-    return
-  }
+  if (!validateForm()) return
 
   isSubmitting.value = true
   successMessage.value = ''
@@ -96,149 +124,106 @@ const handleRegister = async () => {
   <AuthShell
     eyebrow="Novo acesso"
     title="Comece a vender em minutos."
-    description="Crie sua loja e tenha controle total sobre produtos, pedidos e atendimento desde o primeiro dia."
+    description="Crie sua loja e tenha controle sobre produtos, pedidos e atendimento desde o primeiro dia."
   >
-    <div class="mb-8">
-      <h2 class="text-2xl font-semibold text-bip-black">Criar sua loja</h2>
-      <p class="mt-1 text-sm text-bip-muted">
-        Configure o nome da sua loja e uma credencial administrativa segura.
+    <header class="mb-7">
+      <p class="mb-2 text-[11px] font-extrabold uppercase tracking-[0.22em] text-[#d60073]">Configuração inicial</p>
+      <h2 class="text-[2rem] font-extrabold tracking-[-0.045em] text-bip-black">Criar sua loja</h2>
+      <p class="mt-2 text-sm leading-6 text-bip-muted">
+        Defina a identidade da loja e uma credencial administrativa segura.
       </p>
-    </div>
+    </header>
 
-    <div
-      v-if="successMessage"
-      class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"
-    >
-      <div class="flex gap-3">
-        <CheckCircleIcon class="h-5 w-5 shrink-0 text-emerald-600" />
-        <div>
-          <p class="font-semibold">Conta criada</p>
-          <p class="mt-1 leading-6 text-emerald-700">{{ successMessage }}</p>
-        </div>
-      </div>
-
-      <RouterLink
-        :to="{ name: AuthRouteNames.Login }"
-        class="mt-4 flex h-11 w-full items-center justify-center rounded-lg bg-bip-rose text-sm font-bold uppercase tracking-widest text-white shadow-sm transition-all hover:bg-[#b8154f]"
-      >
-        Ir para o login
-      </RouterLink>
-    </div>
-
-    <div
-      v-if="validationHint"
-      class="mb-6 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
-    >
-      <ExclamationTriangleIcon class="h-5 w-5 shrink-0 text-amber-600" />
-      <span>{{ validationHint }}</span>
-    </div>
-
-    <div
-      v-if="errorMessage"
-      class="mb-6 rounded-xl border border-[#F3F4F6] bg-[#F3F4F6] p-3 text-sm text-[#374151]"
-    >
-      {{ errorMessage }}
-    </div>
-
-    <form v-if="!successMessage" @submit.prevent="handleRegister" class="space-y-5">
-      <div>
-        <label class="mb-2 block text-xs font-semibold uppercase tracking-wider text-bip-muted">
-          Nome da loja
-        </label>
-        <input
-          v-model="form.store_name"
-          type="text"
-          autocomplete="organization"
-          placeholder="Ex.: Pizzaria do Joao"
-          class="h-11 w-full rounded-lg border border-bip-line bg-white px-4 text-bip-black shadow-sm transition-colors placeholder:text-zinc-400 focus:border-bip-rose focus:outline-none focus:ring-2 focus:ring-bip-blush"
-          required
-        />
-      </div>
-
-      <div>
-        <label class="mb-2 block text-xs font-semibold uppercase tracking-wider text-bip-muted">
-          Email
-        </label>
-        <input
-          v-model="form.email"
-          type="email"
-          autocomplete="email"
-          placeholder="admin@suaempresa.com"
-          class="h-11 w-full rounded-lg border border-bip-line bg-white px-4 text-bip-black shadow-sm transition-colors placeholder:text-zinc-400 focus:border-bip-rose focus:outline-none focus:ring-2 focus:ring-bip-blush"
-          required
-        />
-      </div>
-
-      <div>
-        <label class="mb-2 block text-xs font-semibold uppercase tracking-wider text-bip-muted">
-          Senha
-        </label>
-        <input
-          v-model="form.password"
-          type="password"
-          autocomplete="new-password"
-          placeholder="Crie uma senha segura"
-          class="h-11 w-full rounded-lg border border-bip-line bg-white px-4 text-bip-black shadow-sm transition-colors placeholder:text-zinc-400 focus:border-bip-rose focus:outline-none focus:ring-2 focus:ring-bip-blush"
-          required
-        />
-
-        <div v-if="form.password" class="mt-2 space-y-1">
-          <div class="flex gap-1">
-            <span
-              v-for="index in strengthTotalBars"
-              :key="index"
-              class="h-1.5 flex-1 rounded-full transition-colors"
-              :class="index <= strengthFilledBars ? strengthBarClass : 'bg-zinc-200'"
-            />
-          </div>
-          <p class="text-xs font-semibold text-bip-muted">Força: {{ strengthLabel }}</p>
-        </div>
-      </div>
-
-      <div>
-        <label class="mb-2 block text-xs font-semibold uppercase tracking-wider text-bip-muted">
-          Confirmar senha
-        </label>
-        <input
-          v-model="form.confirm_password"
-          type="password"
-          autocomplete="new-password"
-          placeholder="Repita a senha"
-          class="h-11 w-full rounded-lg border border-bip-line bg-white px-4 text-bip-black shadow-sm transition-colors placeholder:text-zinc-400 focus:border-bip-rose focus:outline-none focus:ring-2 focus:ring-bip-blush"
-          required
-        />
-      </div>
-
-      <ul class="grid gap-2 border-t border-bip-line pt-4">
-        <li
-          v-for="rule in allPasswordRules"
-          :key="rule.label"
-          class="flex items-center gap-2 text-xs"
-          :class="rule.passed ? 'text-emerald-700' : 'text-bip-muted'"
+    <AuthAlert v-if="successMessage" class="mb-6" tone="success" title="Conta criada">
+      {{ successMessage }}
+      <template #action>
+        <RouterLink
+          :to="{ name: AuthRouteNames.Login }"
+          class="inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-[#111827] px-4 font-semibold text-white transition-colors hover:bg-bip-black focus-visible:ring-2 focus-visible:ring-bip-black focus-visible:ring-offset-2"
         >
-          <span
-            class="h-2 w-2 rounded-full"
-            :class="rule.passed ? 'bg-emerald-500' : 'bg-zinc-300'"
-          ></span>
-          {{ rule.label }}
-        </li>
-      </ul>
+          Ir para o login
+        </RouterLink>
+      </template>
+    </AuthAlert>
 
-      <button
-        type="submit"
-        :disabled="isSubmitting || !isFormReady"
-        class="flex h-11 w-full items-center justify-center rounded-lg bg-bip-rose text-sm font-bold uppercase tracking-widest text-white shadow-sm transition-all hover:bg-[#b8154f] disabled:cursor-not-allowed disabled:bg-zinc-300"
-      >
-        {{ isSubmitting ? 'Criando conta...' : 'Criar conta segura' }}
-      </button>
+    <AuthAlert v-if="errorMessage" class="mb-5" tone="error" data-cy="register-error">
+      {{ errorMessage }}
+    </AuthAlert>
+
+    <form v-if="!successMessage" class="space-y-1" novalidate @submit.prevent="handleRegister">
+      <AuthField
+        id="register-store-name"
+        v-model="form.store_name"
+        name="store_name"
+        label="Nome da loja"
+        autocomplete="organization"
+        placeholder="Ex.: Pizzaria do João"
+        :error="fieldErrors.store_name"
+        data-cy="register-store-name"
+        @input="fieldErrors.store_name = ''"
+      />
+
+      <AuthField
+        id="register-email"
+        v-model="form.email"
+        name="email"
+        label="Email administrativo"
+        type="email"
+        inputmode="email"
+        autocomplete="email"
+        placeholder="admin@suaempresa.com"
+        :error="fieldErrors.email"
+        data-cy="register-email"
+        @input="fieldErrors.email = ''"
+      />
+
+      <AuthField
+        id="register-password"
+        v-model="form.password"
+        name="password"
+        label="Senha"
+        type="password"
+        autocomplete="new-password"
+        placeholder="Crie uma senha segura"
+        :error="fieldErrors.password"
+        data-cy="register-password"
+        @input="fieldErrors.password = ''"
+      />
+
+      <AuthField
+        id="register-password-confirmation"
+        v-model="form.confirm_password"
+        name="confirm_password"
+        label="Confirmar senha"
+        type="password"
+        autocomplete="new-password"
+        placeholder="Repita a senha"
+        :error="fieldErrors.confirm_password"
+        data-cy="register-password-confirmation"
+        @input="fieldErrors.confirm_password = ''"
+      />
+
+      <AuthPasswordStrength
+        class="pb-3"
+        :rules="allPasswordRules"
+        :label="strengthLabel"
+        :filled-bars="strengthFilledBars"
+        :total-bars="strengthTotalBars"
+        :bar-class="strengthBarClass"
+        :show="Boolean(form.password || form.confirm_password)"
+      />
+
+      <AuthSubmitButton :loading="isSubmitting" loading-label="Criando conta...">
+        Criar conta segura
+      </AuthSubmitButton>
     </form>
 
     <template #footer>
       <RouterLink
         :to="{ name: AuthRouteNames.Login }"
-        class="text-sm font-semibold text-bip-muted transition-colors hover:text-bip-rose"
+        class="text-sm font-bold text-bip-black underline-offset-4 hover:underline"
       >
-        Ja tenho conta administrativa
+        Já tenho uma conta administrativa
       </RouterLink>
       <p class="mt-4 text-xs leading-5 text-bip-muted">
         Contas administrativas devem ser usadas apenas por pessoas autorizadas.
