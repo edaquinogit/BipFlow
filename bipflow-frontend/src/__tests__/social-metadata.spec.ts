@@ -10,7 +10,7 @@ import { systemRoutes } from '../router/system.routes'
 
 const FRONTEND = resolve(__dirname, '..', '..')
 const PUBLIC = resolve(FRONTEND, 'public')
-const CANONICAL_ORIGIN = 'https://bipflow-manage.pages.dev'
+const CANONICAL_ORIGIN = 'https://bipflow.pages.dev'
 
 const indexHtml = readFileSync(resolve(FRONTEND, 'index.html'), 'utf8')
 
@@ -116,9 +116,29 @@ describe('social metadata — crawler-visible <head> in index.html', () => {
   it('never leaks a non-production host or the old logo asset', () => {
     const head = indexHtml.slice(0, indexHtml.indexOf('</head>'))
     expect(head).not.toMatch(/localhost|127\.0\.0\.1|onrender\.com/)
-    // preview subdomains look like <hash>.bipflow-manage.pages.dev
-    expect(head).not.toMatch(/[0-9a-f]{6,}\.bipflow-manage\.pages\.dev/)
+    // preview subdomains look like <hash>.bipflow.pages.dev
+    expect(head).not.toMatch(/[0-9a-f]{6,}\.bipflow\.pages\.dev/)
     expect(head).not.toMatch(/brand-logo\.png/)
+  })
+
+  it('canonical surfaces point at bipflow.pages.dev, never the retired -manage host', () => {
+    const head = indexHtml.slice(0, indexHtml.indexOf('</head>'))
+    // The production origin migrated bipflow-manage.pages.dev -> bipflow.pages.dev.
+    // No canonical/OG/Twitter surface may still carry the old host.
+    expect(head).not.toMatch(/bipflow-manage\.pages\.dev/)
+    for (const url of [
+      link(indexHtml, 'canonical'),
+      meta(indexHtml, 'property', 'og:url'),
+      meta(indexHtml, 'property', 'og:image'),
+      meta(indexHtml, 'property', 'og:image:secure_url'),
+      meta(indexHtml, 'name', 'twitter:image'),
+    ]) {
+      expect(url).toMatch(/^https:\/\/bipflow\.pages\.dev\//)
+    }
+    const robots = readFileSync(resolve(PUBLIC, 'robots.txt'), 'utf8')
+    const sitemap = readFileSync(resolve(PUBLIC, 'sitemap.xml'), 'utf8')
+    expect(robots).not.toMatch(/bipflow-manage\.pages\.dev/)
+    expect(sitemap).not.toMatch(/bipflow-manage\.pages\.dev/)
   })
 })
 
