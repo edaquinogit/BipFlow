@@ -45,6 +45,20 @@ const salesAnalyticsError = ref<string | null>(null);
 
 const salesRevenueDisplay = ref(formatBRL(0));
 const salesRevenueComparison = ref<number | null>(null);
+// Online-sales foundation: the confirmed-vs-pending split shown under the
+// volume number so "Vendas (30 dias)" is never mistaken for money received.
+const salesRevenueSubtitle = ref<string | null>(null);
+
+function buildRevenueSubtitle(summary: SaleOrderSummary): string {
+  const parts = [`${formatBRL(summary.paid_revenue_total)} recebido`];
+  if (Number(summary.pending_payment_total) > 0) {
+    parts.push(`${formatBRL(summary.pending_payment_total)} pendente`);
+  }
+  if (Number(summary.refund_pending_total) > 0) {
+    parts.push(`${formatBRL(summary.refund_pending_total)} a reembolsar`);
+  }
+  return parts.join(' · ');
+}
 
 const fetchSalesSummary = async (): Promise<void> => {
   isSalesSummaryLoading.value = true;
@@ -52,11 +66,13 @@ const fetchSalesSummary = async (): Promise<void> => {
   try {
     salesSummary.value = await salesService.summary('30d');
     salesRevenueDisplay.value = formatBRL(salesSummary.value.revenue_total);
+    salesRevenueSubtitle.value = buildRevenueSubtitle(salesSummary.value);
     const comparison = salesSummary.value.comparison_previous_period;
     salesRevenueComparison.value = comparison === null ? null : Number(comparison);
   } catch (error: unknown) {
     Logger.warn('Failed to fetch dashboard sales summary', buildErrorContext(error as ApplicationError));
     salesSummary.value = null;
+    salesRevenueSubtitle.value = null;
   } finally {
     isSalesSummaryLoading.value = false;
   }
@@ -143,6 +159,7 @@ useStoreSwitchEffect(refreshOverview);
       :stats="inventoryStats"
       :revenue="salesRevenueDisplay"
       :revenue-comparison="salesRevenueComparison"
+      :revenue-subtitle="salesRevenueSubtitle"
       :is-loading="productsLoading || isSalesSummaryLoading"
       @open-stock-alerts="isStockAlertDrawerOpen = true"
     />

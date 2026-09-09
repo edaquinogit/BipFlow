@@ -48,6 +48,12 @@ describe('DashboardOverviewView', () => {
       average_ticket: '0.00',
       comparison_previous_period: null,
       comparison_same_period_last_year: null,
+      paid_revenue_total: '0.00',
+      paid_orders_count: 0,
+      pending_payment_total: '0.00',
+      pending_payment_count: 0,
+      refund_pending_total: '0.00',
+      refund_pending_count: 0,
     })
     vi.mocked(salesService.timeseries).mockRejectedValue(new Error('network down'))
     vi.mocked(salesService.breakdown).mockResolvedValue({
@@ -63,7 +69,7 @@ describe('DashboardOverviewView', () => {
     expect(wrapper.text()).toContain('Nao foi possivel carregar a analise de vendas agora.')
   })
 
-  it('renders the revenue summary once the request resolves', async () => {
+  it('renders the sales volume plus the confirmed / pending money split', async () => {
     vi.mocked(salesService.summary).mockResolvedValue({
       period: '30d',
       revenue_total: '150.00',
@@ -71,6 +77,12 @@ describe('DashboardOverviewView', () => {
       average_ticket: '50.00',
       comparison_previous_period: '10.00',
       comparison_same_period_last_year: null,
+      paid_revenue_total: '90.00',
+      paid_orders_count: 1,
+      pending_payment_total: '40.00',
+      pending_payment_count: 1,
+      refund_pending_total: '20.00',
+      refund_pending_count: 1,
     })
     vi.mocked(salesService.timeseries).mockResolvedValue([])
     vi.mocked(salesService.breakdown).mockResolvedValue({
@@ -83,8 +95,15 @@ describe('DashboardOverviewView', () => {
     const wrapper = mountOverview()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('R$')
+    // Big number = order volume; the label no longer says "Receita".
     expect(wrapper.text()).toContain('150,00')
+    expect(wrapper.text()).toContain('Vendas (30 dias)')
+    expect(wrapper.text()).not.toContain('Receita de vendas')
+
+    const subtitle = wrapper.get('[data-cy="revenue-card-subtitle"]').text()
+    expect(subtitle).toContain('90,00 recebido')
+    expect(subtitle).toContain('40,00 pendente')
+    expect(subtitle).toContain('20,00 a reembolsar')
   })
 
   it('opens the stock alert drawer with the critical products when the alert card is clicked', async () => {
@@ -95,6 +114,12 @@ describe('DashboardOverviewView', () => {
       average_ticket: '0.00',
       comparison_previous_period: null,
       comparison_same_period_last_year: null,
+      paid_revenue_total: '0.00',
+      paid_orders_count: 0,
+      pending_payment_total: '0.00',
+      pending_payment_count: 0,
+      refund_pending_total: '0.00',
+      refund_pending_count: 0,
     })
     vi.mocked(salesService.timeseries).mockResolvedValue([])
     vi.mocked(salesService.breakdown).mockResolvedValue({

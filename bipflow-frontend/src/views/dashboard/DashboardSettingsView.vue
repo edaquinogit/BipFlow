@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, type Component } from 'vue';
 import {
+  BanknotesIcon,
   BuildingStorefrontIcon,
   IdentificationIcon,
   PaintBrushIcon,
@@ -11,6 +12,7 @@ import {
   TruckIcon,
 } from '@heroicons/vue/24/outline';
 import CategoriesTab from '@/components/dashboard/settings/CategoriesTab.vue';
+import CommerceSettingsTab from '@/components/dashboard/settings/CommerceSettingsTab.vue';
 import DeliveryRegionsTab from '@/components/dashboard/settings/DeliveryRegionsTab.vue';
 import MerchantProfileTab from '@/components/dashboard/settings/MerchantProfileTab.vue';
 import ReceiptSettingsTab from '@/components/dashboard/settings/ReceiptSettingsTab.vue';
@@ -22,6 +24,7 @@ import WhatsappTab from '@/components/dashboard/settings/WhatsappTab.vue';
 type SettingsTab =
   | 'perfil'
   | 'categorias'
+  | 'vendas'
   | 'frete'
   | 'whatsapp'
   | 'lojas'
@@ -33,6 +36,7 @@ const TABS: { value: SettingsTab; label: string; icon: typeof TagIcon; component
   { value: 'perfil', label: 'Perfil da loja', icon: IdentificationIcon, component: MerchantProfileTab },
   { value: 'categorias', label: 'Categorias', icon: TagIcon, component: CategoriesTab },
   { value: 'aparencia', label: 'Aparencia da vitrine', icon: PaintBrushIcon, component: StorefrontAppearanceTab },
+  { value: 'vendas', label: 'Vendas online', icon: BanknotesIcon, component: CommerceSettingsTab },
   { value: 'frete', label: 'Frete', icon: TruckIcon, component: DeliveryRegionsTab },
   { value: 'whatsapp', label: 'WhatsApp', icon: PhoneIcon, component: WhatsappTab },
   { value: 'lojas', label: 'Lojas', icon: BuildingStorefrontIcon, component: StoresTab },

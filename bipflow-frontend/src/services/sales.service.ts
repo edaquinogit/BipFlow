@@ -1,6 +1,7 @@
 import api from './api'
 import type {
   PaginatedSalesOrdersResponse,
+  PaymentStatus,
   SaleOrderBreakdown,
   SaleOrderCustomerInsights,
   SaleOrderDateRange,
@@ -41,6 +42,10 @@ export const salesService = {
       params.channel = filters.channel
     }
 
+    if (filters.paymentStatus) {
+      params.payment_status = filters.paymentStatus
+    }
+
     if (filters.page) {
       params.page = filters.page
     }
@@ -68,6 +73,28 @@ export const salesService = {
       status,
       ...(shipping ? { carrier_name: shipping.carrierName, tracking_code: shipping.trackingCode } : {}),
     })
+
+    return response.data
+  },
+
+  // Online-sales foundation: record what happened to an order's payment. The
+  // backend re-checks that `paymentStatus` is a legal move from the order's
+  // current state (see update_payment in bipdelivery/api/views.py) and
+  // returns the fuller detail shape so the modal can refresh badge + history
+  // without a second request.
+  async updatePayment(
+    orderId: number,
+    paymentStatus: PaymentStatus,
+    options?: { reference?: string; note?: string }
+  ): Promise<SaleOrderDetail> {
+    const response = await api.patch<SaleOrderDetail>(
+      `v1/sales-orders/${orderId}/payment/`,
+      {
+        payment_status: paymentStatus,
+        ...(options?.reference ? { reference: options.reference } : {}),
+        ...(options?.note ? { note: options.note } : {}),
+      }
+    )
 
     return response.data
   },

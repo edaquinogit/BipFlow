@@ -28,7 +28,7 @@ describe('PaymentBreakdownCard', () => {
 
   it('renders the donut chart when payment data is available', () => {
     const wrapper = mountCard({
-      byPaymentMethod: [{ payment_method: 'pix', revenue_total: '40.00', orders_count: 2 }],
+      byPaymentMethod: [{ payment_method: 'pix', revenue_total: '40.00', orders_count: 2, paid_revenue_total: '40.00' }],
       byStatus: [],
       isLoading: false,
     })

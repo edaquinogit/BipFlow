@@ -14,6 +14,30 @@ export interface SaleOrderItem {
 
 export type SaleOrderStatus = 'prepared' | 'sent' | 'delivered' | 'cancelled'
 
+// Payment lifecycle (online-sales foundation). Distinct from SaleOrderStatus:
+// this tracks whether the money was actually received. Mirrors
+// SaleOrder.PAYMENT_STATUS_CHOICES in bipdelivery/api/models.py.
+export type PaymentStatus =
+  | 'pending'
+  | 'paid'
+  | 'failed'
+  | 'refund_pending'
+  | 'refunded'
+  | 'cancelled'
+
+export type PaymentEventSource = 'system' | 'manual' | 'gateway'
+
+export interface PaymentStatusEvent {
+  id: number
+  previous_status: PaymentStatus
+  new_status: PaymentStatus
+  source: PaymentEventSource
+  performed_by_username: string | null
+  reference: string
+  note: string
+  created_at: string
+}
+
 // Etapa 3 of the QR-code stock-exit evolution: which channel the sale came
 // through -- the existing e-commerce/WhatsApp checkout (virtual) or the
 // physical-store PDV (loja_fisica). Mirrors SaleOrder.CHANNEL_CHOICES in
@@ -30,6 +54,10 @@ export interface SaleOrder {
   customer_email: string
   delivery_method: 'delivery' | 'pickup'
   payment_method: 'pix' | 'card' | 'cash'
+  // Payment lifecycle (online-sales foundation): on the list payload too, so
+  // a row can show a payment badge without opening the detail.
+  payment_status: PaymentStatus
+  paid_at: string | null
   delivery_region_name: string
   // Etapa R3 of the QR-code stock-exit refinement: who rang up the sale.
   // Always null for a virtual/WhatsApp order (no authenticated staff
@@ -60,6 +88,13 @@ export interface SaleOrderDetail extends SaleOrder {
   tracking_url: string
   shipped_at: string | null
   delivered_at: string | null
+  // Payment lifecycle (online-sales foundation): detail-only fields.
+  refunded_at: string | null
+  payment_reference: string
+  payment_status_events: PaymentStatusEvent[]
+  // Payment statuses an operator may move this order to right now
+  // (backend `available_manual_targets`).
+  available_payment_actions: PaymentStatus[]
 }
 
 export interface PaginatedSalesOrdersResponse {
@@ -84,17 +119,27 @@ export interface SaleOrderFilters {
   // refinement is the first frontend caller (the PDV's "ultimas vendas"
   // panel, DashboardPdvView.vue).
   channel?: SaleOrderChannel
+  // Online-sales foundation: narrow the list to one payment state.
+  paymentStatus?: PaymentStatus
 }
 
 export type SaleOrderSummaryPeriod = 'today' | '7d' | '30d' | '90d' | 'month'
 
 export interface SaleOrderSummary {
   period: SaleOrderSummaryPeriod | 'custom'
+  // Order volume (non-cancelled), unchanged meaning for contract compatibility.
   revenue_total: string
   orders_count: number
   average_ticket: string
   comparison_previous_period: string | null
   comparison_same_period_last_year: string | null
+  // Money actually received vs. orders merely created (online-sales foundation).
+  paid_revenue_total: string
+  paid_orders_count: number
+  pending_payment_total: string
+  pending_payment_count: number
+  refund_pending_total: string
+  refund_pending_count: number
 }
 
 export interface SaleOrderDateRange {
@@ -122,6 +167,8 @@ export interface PaymentMethodBreakdown {
   payment_method: SaleOrder['payment_method']
   revenue_total: string
   orders_count: number
+  // Confirmed-money slice per method (online-sales foundation).
+  paid_revenue_total: string
 }
 
 export interface StatusBreakdown {

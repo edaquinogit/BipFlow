@@ -19,6 +19,9 @@ defineProps<{
   stats: InventoryStats | null;
   revenue: string | number;
   revenueComparison?: number | null;
+  // Online-sales foundation: confirmed-money vs pending split, so the volume
+  // number above it is never read as "revenue received".
+  revenueSubtitle?: string | null;
   isLoading: boolean;
 }>();
 
@@ -57,7 +60,11 @@ const goToProducts = (): void => {
         @click="emit('openStockAlerts')"
       />
 
-      <RevenueCard :value="revenue" :comparison="revenueComparison ?? null" />
+      <RevenueCard
+        :value="revenue"
+        :comparison="revenueComparison ?? null"
+        :subtitle="revenueSubtitle ?? null"
+      />
     </template>
 
   </section>

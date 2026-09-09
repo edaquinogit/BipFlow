@@ -16,6 +16,7 @@ vi.mock('@/services/sales.service', () => ({
     list: vi.fn(),
     get: vi.fn(),
     updateStatus: vi.fn(),
+    updatePayment: vi.fn(),
   },
 }))
 
@@ -30,6 +31,8 @@ function buildOrder(overrides: Partial<SaleOrder> = {}): SaleOrder {
     customer_email: '',
     delivery_method: 'pickup',
     payment_method: 'pix',
+    payment_status: 'pending',
+    paid_at: null,
     delivery_region_name: '',
     performed_by_username: null,
     subtotal: '50.00',
@@ -56,6 +59,10 @@ function buildOrderDetail(overrides: Partial<SaleOrderDetail> = {}): SaleOrderDe
     tracking_url: '',
     shipped_at: null,
     delivered_at: null,
+    refunded_at: null,
+    payment_reference: '',
+    payment_status_events: [],
+    available_payment_actions: [],
     ...overrides,
   }
 }
@@ -127,6 +134,48 @@ describe('DashboardOrdersView', () => {
 
     expect(wrapper.text()).toContain('Cliente Teste')
     expect(wrapper.text()).toContain('Novo')
+  })
+
+  it('shows a payment badge on each order row (online-sales foundation)', async () => {
+    vi.mocked(salesService.list).mockResolvedValue(
+      buildResponse([
+        buildOrder({ id: 1, payment_status: 'paid' }),
+        buildOrder({ id: 2, payment_status: 'refund_pending' }),
+      ]),
+    )
+
+    const wrapper = mount(DashboardOrdersView)
+    await flushPromises()
+
+    const badges = wrapper.findAll('[data-cy="sale-payment-badge"]')
+    expect(badges).toHaveLength(2)
+    expect(badges[0]?.text()).toBe('Pago')
+    expect(badges[1]?.text()).toBe('Reembolso pendente')
+  })
+
+  it('confirms a payment from the detail modal and patches the row without reload', async () => {
+    vi.mocked(salesService.list).mockResolvedValue(
+      buildResponse([buildOrder({ id: 1, payment_status: 'pending' })]),
+    )
+    vi.mocked(salesService.get).mockResolvedValue(
+      buildOrderDetail({ id: 1, payment_status: 'pending', available_payment_actions: ['paid', 'failed'] }),
+    )
+    vi.mocked(salesService.updatePayment).mockResolvedValue(
+      buildOrderDetail({ id: 1, payment_status: 'paid', available_payment_actions: [] }),
+    )
+
+    const wrapper = mount(DashboardOrdersView, { global: { stubs: { teleport: true } } })
+    await flushPromises()
+
+    await wrapper.find('[data-cy="sale-detail-button"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('[data-cy="payment-action-paid"]').trigger('click')
+    await flushPromises()
+
+    expect(salesService.updatePayment).toHaveBeenCalledWith(1, 'paid')
+    expect(salesService.list).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-cy="sale-payment-badge"]').text()).toBe('Pago')
   })
 
   it('shows a channel badge distinguishing PDV sales from virtual orders (Etapa 3/5 of the QR-code stock-exit evolution)', async () => {

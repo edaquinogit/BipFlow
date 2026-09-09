@@ -659,4 +659,59 @@ describe('CartDrawer', () => {
       expect(wrapper.text()).not.toContain('Informe seu nome.')
     })
   })
+
+  describe('online-sales foundation: commercial rules', () => {
+    it('only offers the store-allowed delivery and payment methods', async () => {
+      const wrapper = mountDrawer({
+        allowedDeliveryMethods: ['pickup'],
+        allowedPaymentMethods: ['pix', 'cash'],
+      })
+      await goToDetails(wrapper)
+
+      const deliveryOptions = wrapper
+        .get('[data-cy="checkout-field-delivery-method"]')
+        .findAll('option')
+        .map((option) => option.attributes('value'))
+      const paymentOptions = wrapper
+        .get('[data-cy="checkout-field-payment-method"]')
+        .findAll('option')
+        .map((option) => option.attributes('value'))
+
+      expect(deliveryOptions).toEqual(['pickup'])
+      expect(paymentOptions).toEqual(['pix', 'cash'])
+    })
+
+    it('shows a closed-store notice and blocks continuing', async () => {
+      const wrapper = mountDrawer({ storeAcceptsOrders: false })
+
+      expect(wrapper.find('[data-cy="cart-store-closed-notice"]').exists()).toBe(true)
+      expect(
+        wrapper.get('[data-cy="checkout-continue-button"]').attributes('disabled'),
+      ).toBeDefined()
+    })
+
+    it('reports how much is missing for the minimum order and blocks continuing', async () => {
+      const wrapper = mountDrawer({
+        subtotal: 42.5,
+        minimumOrderValue: 100,
+      })
+
+      expect(wrapper.get('[data-cy="cart-minimum-order-notice"]').text()).toContain('57,50')
+      expect(
+        wrapper.get('[data-cy="checkout-continue-button"]').attributes('disabled'),
+      ).toBeDefined()
+    })
+
+    it('allows continuing once the minimum is met', async () => {
+      const wrapper = mountDrawer({
+        subtotal: 120,
+        minimumOrderValue: 100,
+      })
+
+      expect(wrapper.get('[data-cy="cart-minimum-order-notice"]').text()).toContain('atingido')
+      expect(
+        wrapper.get('[data-cy="checkout-continue-button"]').attributes('disabled'),
+      ).toBeUndefined()
+    })
+  })
 })

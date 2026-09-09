@@ -5,17 +5,24 @@ import { BanknotesIcon } from '@heroicons/vue/24/outline';
 const props = defineProps<{
   value: string | number;
   comparison?: number | null;
+  // Online-sales foundation: the confirmed-vs-pending money split. The big
+  // number is order volume (non-cancelled orders, any payment state); this
+  // subtitle stops it being read as "revenue received".
+  subtitle?: string | null;
 }>();
 
 const hasComparison = computed(() => props.comparison !== null && props.comparison !== undefined);
 const isPositiveComparison = computed(() => (props.comparison ?? 0) >= 0);
 const accessibleLabel = computed(() => {
+  const base = `Vendas dos ultimos 30 dias: ${props.value}`;
+  const withSubtitle = props.subtitle ? `${base}. ${props.subtitle}` : base;
+
   if (!hasComparison.value) {
-    return `Receita de vendas dos ultimos 30 dias: ${props.value}`;
+    return withSubtitle;
   }
 
   const trend = isPositiveComparison.value ? 'aumento' : 'queda';
-  return `Receita de vendas dos ultimos 30 dias: ${props.value}, ${trend} de ${Math.abs(props.comparison ?? 0).toFixed(1)}% vs periodo anterior`;
+  return `${withSubtitle}, ${trend} de ${Math.abs(props.comparison ?? 0).toFixed(1)}% vs periodo anterior`;
 });
 </script>
 
@@ -23,11 +30,14 @@ const accessibleLabel = computed(() => {
   <div role="group" :aria-label="accessibleLabel" class="revenue-card-root">
     <div class="relative z-10">
       <p class="text-[10px] font-black text-rose-100 uppercase tracking-[0.3em] mb-1 opacity-80">
-        Receita de vendas (30 dias)
+        Vendas (30 dias)
       </p>
       <h3 class="text-4xl font-black text-white italic tracking-tighter transition-all duration-700">
         {{ value }}
       </h3>
+      <p v-if="subtitle" class="mt-2 text-xs font-semibold text-rose-100/90" data-cy="revenue-card-subtitle">
+        {{ subtitle }}
+      </p>
       <p
         v-if="hasComparison"
         class="mt-2 text-xs font-bold"
