@@ -93,12 +93,17 @@ Responsabilidades:
 - manter configuracoes operacionais da loja, incluindo WhatsApp de atendimento;
 - responder mensagens do bot MVP sem IA por regras deterministicas;
 - persistir conversas e mensagens do bot em `BotConversation` e `BotMessage`;
-- validar checkout no servidor;
+- manter a configuracao comercial por loja (`StoreCommerceSettings`: aceita
+  pedidos, modalidades de entrega, formas de pagamento, pedido minimo);
+- validar checkout no servidor, incluindo as regras comerciais da loja;
 - persistir pedidos como `SaleOrder` e `SaleOrderItem`;
+- manter o ciclo de vida de pagamento do pedido (`payment_status`) com
+  auditoria append-only em `PaymentStatusEvent` e maquina de estados em
+  `bipdelivery/api/payments.py`;
 - expor historico de vendas para usuarios com papel de dashboard;
-- registrar vendas de PDV e enviar recibo PDF por email;
+- registrar vendas de PDV (nascem pagas) e enviar recibo PDF por email;
 - validar transicoes de pedido, incluindo envio, entrega e cancelamento com
-  estorno de estoque.
+  estorno de estoque e liquidacao de pagamento.
 
 Arquivos principais:
 
@@ -106,6 +111,7 @@ Arquivos principais:
 - `bipdelivery/api/bot_engine.py`
 - `bipdelivery/api/serializers.py`
 - `bipdelivery/api/views.py`
+- `bipdelivery/api/payments.py`
 - `bipdelivery/api/pdv.py`
 - `bipdelivery/api/store_scope.py`
 - `bipdelivery/api/v1_urls.py`
@@ -172,13 +178,26 @@ Bot MVP:
 - documentacao da feature:
   [docs/features/catalog-bot.md](../features/catalog-bot.md).
 
+Configuracao comercial:
+
+- `/api/v1/store/current/commerce-settings/` (dashboard, escrita
+  `owner`/`manager`);
+- `/api/v1/public/stores/{slug}/commerce-settings/` (projecao sanitizada
+  para a vitrine);
+- `StoreCommerceSettings` (`OneToOneField(Store)` + `get_for_store()`),
+  detalhado em
+  [docs/architecture/online-sales-foundation.md](./online-sales-foundation.md).
+
 Checkout:
 
 - `/api/v1/checkout/whatsapp/`
 - publico;
 - recalcula totais no backend;
+- aplica as regras comerciais da loja (aceita pedidos, modalidade,
+  pagamento, pedido minimo, regiao) antes de qualquer efeito colateral,
+  com codigos de rejeicao estaveis (HTTP 422);
 - usa taxa da regiao de entrega quando enviada;
-- persiste pedido e itens;
+- persiste pedido e itens; o pedido virtual nasce `payment_status=pending`;
 - retorna mensagem e URL `wa.me` quando houver WhatsApp configurado no
   dashboard ou fallback em `WHATSAPP_ORDER_PHONE`.
 
@@ -187,9 +206,12 @@ Vendas:
 - `/api/v1/sales-orders/`
 - somente papel de dashboard;
 - listagem e detalhe para papeis de dashboard;
-- atualizacao de status para papeis com escrita operacional;
-- suporta filtros `status`, `search` e `channel`;
-- agregados de dashboard em `summary`, `timeseries`, `breakdown` e `customers`.
+- atualizacao de status operacional e de pagamento (`.../payment/`) para
+  papeis com escrita operacional;
+- suporta filtros `status`, `search`, `channel` e `payment_status`;
+- agregados de dashboard em `summary`, `timeseries`, `breakdown` e
+  `customers`, com `summary`/`breakdown` separando receita confirmada
+  (`paid_*`) de volume de pedidos.
 
 PDV:
 
@@ -212,6 +234,11 @@ PDV:
 - O dashboard consome historico de vendas persistido pelo checkout publico.
 - O PDV e o checkout compartilham o mesmo historico de pedidos, mas canais e
   regras de captura sao separados.
+- Regra comercial (aceitar pedidos, modalidade, pagamento, minimo) e ciclo de
+  pagamento vivem no backend; o frontend so filtra opcoes e mostra avisos.
+- O Bip Flow nao processa pagamento nem executa reembolso: `payment_status`
+  e movido por operador ou pelas transicoes automaticas do PDV e do
+  cancelamento.
 - O bot do catalogo deve continuar fino no frontend: UI chama service, service
   chama API, backend classifica e consulta dados reais.
 - Documentacao deve representar o codigo atual e ser removida quando virar

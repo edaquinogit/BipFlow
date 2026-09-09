@@ -416,6 +416,76 @@ Notas:
 - configuracoes ricas por loja, como nome, slug e recibo de PDV, ficam nos
   endpoints `store/current` e `store/mine`.
 
+## Configuracao Comercial Da Loja
+
+Regras comerciais por loja (online-sales foundation): se aceita pedidos,
+modalidades de entrega, formas de pagamento e pedido minimo.
+
+```http
+GET /api/v1/store/current/commerce-settings/
+PATCH /api/v1/store/current/commerce-settings/
+GET /api/v1/public/stores/{slug}/commerce-settings/
+```
+
+`store/current` exige autenticacao: qualquer membro le, somente
+`owner`/`manager` (ou staff) edita. O tenant vem do contexto autenticado
+(claim JWT / header `X-Store-Slug`), nunca de um `store_id` no payload.
+
+Payload de escrita (parcial):
+
+```json
+{
+  "orders_enabled": true,
+  "delivery_enabled": true,
+  "pickup_enabled": false,
+  "minimum_order_value": "50.00",
+  "accepts_pix": true,
+  "accepts_card": true,
+  "accepts_cash": false
+}
+```
+
+Campos (dashboard):
+
+- `orders_enabled`
+- `delivery_enabled`
+- `pickup_enabled`
+- `minimum_order_value`
+- `accepts_pix`
+- `accepts_card`
+- `accepts_cash`
+- `enabled_delivery_methods` (read-only, derivado)
+- `enabled_payment_methods` (read-only, derivado)
+- `created_at`
+- `updated_at`
+
+Invariantes (HTTP 400 com chave de campo, tambem `CheckConstraint` no banco):
+
+- `minimum_order_value` nunca negativo;
+- com `orders_enabled=true`, ao menos uma modalidade de entrega;
+- com `orders_enabled=true`, ao menos uma forma de pagamento.
+
+Resposta publica (`public/stores/{slug}/commerce-settings/`, loja ativa,
+sem auth, nao cria linha):
+
+```json
+{
+  "orders_enabled": true,
+  "delivery_enabled": true,
+  "pickup_enabled": false,
+  "minimum_order_value": "50.00",
+  "accepts_pix": true,
+  "accepts_card": true,
+  "accepts_cash": false,
+  "delivery_methods": ["delivery"],
+  "payment_methods": ["pix", "card"]
+}
+```
+
+Defaults preservam o comportamento anterior (tudo habilitado, sem minimo).
+Uma loja criada pelo onboarding ja recebe a linha; lojas antigas usam
+`get_for_store()` sob demanda.
+
 ## Perfil De Cliente
 
 ```http
@@ -581,8 +651,22 @@ Regras:
 - sem regiao enviada, entrega usa `ORDER_DELIVERY_FEE`;
 - retirada usa taxa `0.00`;
 - o pedido e persistido em `SaleOrder` com itens em `SaleOrderItem`;
-- `order_reference` segue o prefixo `BPF`.
+- `order_reference` segue o prefixo `BPF`;
+- todo pedido virtual nasce com `payment_status="pending"`;
 - `whatsapp_url` aponta para o WhatsApp da loja configurado no dashboard.
+
+Rejeicoes de regra comercial (online-sales foundation) — HTTP 422 com corpo
+`{"code", "detail"}`, aplicadas antes de criar pedido, mexer em estoque ou
+consumir chave de idempotencia:
+
+- `store_not_accepting_orders` — loja inativa ou `orders_enabled=false`;
+- `delivery_method_unavailable` — modalidade escolhida desabilitada;
+- `payment_method_unavailable` — forma de pagamento nao aceita;
+- `minimum_order_not_reached` — subtotal recalculado abaixo do minimo;
+- `delivery_region_unavailable` — regiao inativa ou de outra loja.
+
+Um retry idempotente de um pedido que ja existe devolve o pedido mesmo que a
+loja tenha fechado nesse meio-tempo.
 
 Resposta:
 
@@ -604,7 +688,8 @@ POST /api/v1/pdv/sales/{order_reference}/receipt-email/
 
 `pdv/sales` exige autenticacao e papel de escrita de dashboard. Ele registra uma
 venda presencial usando `public_code`, baixa estoque de forma atomica e persiste
-um `SaleOrder` com canal `loja_fisica`.
+um `SaleOrder` com canal `loja_fisica`. A venda nasce ja paga
+(`payment_status="paid"`, com `paid_at` e um evento de auditoria `system`).
 
 Payload:
 
@@ -660,6 +745,7 @@ maximo de 5 MB, assinatura de PDF e escopo do pedido antes de enviar o email.
 GET /api/v1/sales-orders/
 GET /api/v1/sales-orders/{id}/
 PATCH /api/v1/sales-orders/{id}/status/
+PATCH /api/v1/sales-orders/{id}/payment/
 GET /api/v1/sales-orders/summary/
 GET /api/v1/sales-orders/timeseries/
 GET /api/v1/sales-orders/breakdown/
@@ -674,6 +760,7 @@ Query params:
 
 - `status`
 - `channel`
+- `payment_status`
 - `search`
 - `period`
 - `start`
@@ -692,6 +779,8 @@ Campos principais:
 - `customer_email`
 - `delivery_method`
 - `payment_method`
+- `payment_status`
+- `paid_at`
 - `subtotal`
 - `delivery_fee`
 - `delivery_region_name`
@@ -714,6 +803,12 @@ O detalhe adiciona:
 - `tracking_url`
 - `shipped_at`
 - `delivered_at`
+- `refunded_at`
+- `payment_reference`
+- `payment_status_events` (auditoria append-only: `previous_status`,
+  `new_status`, `source`, `performed_by_username`, `reference`, `note`,
+  `created_at`)
+- `available_payment_actions` (transicoes que o operador pode disparar agora)
 
 Atualizacao de status:
 
@@ -738,4 +833,40 @@ Regras de transicao:
 - para marcar `sent`, envie `carrier_name` e `tracking_code`;
 - pedido pickup pode ir de `prepared` direto para `delivered`;
 - `delivered` e `cancelled` sao terminais;
-- cancelar estorna estoque de checkout e PDV de forma idempotente.
+- cancelar estorna estoque de checkout e PDV de forma idempotente;
+- cancelar tambem liquida o pagamento: `pending`/`failed` viram `cancelled`,
+  `paid` vira `refund_pending` (nunca `refunded` automatico).
+
+Pagamento do pedido:
+
+```json
+{
+  "payment_status": "paid",
+  "reference": "TED 4432",
+  "note": "opcional"
+}
+```
+
+Exige papel de escrita e membership na loja resolvida (loja de outro tenant
+retorna 404). Estados: `pending`, `paid`, `failed`, `refund_pending`,
+`refunded`, `cancelled`.
+
+- Transicoes manuais permitidas: `pending -> paid`, `pending -> failed`,
+  `failed -> pending`, `refund_pending -> refunded`.
+- `cancelled` e `refund_pending` nunca sao alcancaveis por esta acao — so
+  pelo cancelamento do pedido.
+- Idempotente: repetir o mesmo alvo nao gera segundo evento.
+- Alvo ilegal a partir do estado atual → HTTP 400.
+- O Bip Flow nao executa reembolso: "confirmar reembolso" registra um
+  reembolso feito por fora do sistema.
+
+Resposta: o `SaleOrderDetailSerializer` completo (badge + historico
+atualizados sem reload).
+
+Metricas (`summary`) — `revenue_total` / `orders_count` seguem sendo volume
+de pedidos nao-cancelados; novos campos separam dinheiro recebido:
+`paid_revenue_total`, `paid_orders_count`, `pending_payment_total`,
+`pending_payment_count`, `refund_pending_total`, `refund_pending_count`. As
+fatias `paid` / `pending` sao medidas sobre pedidos nao-cancelados; a fatia
+`refund_pending` sobre uma base que inclui cancelados (esse estado so existe
+em pedido cancelado). `breakdown.by_payment_method` ganha `paid_revenue_total`.
