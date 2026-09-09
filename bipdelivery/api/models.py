@@ -664,10 +664,20 @@ class Store(models.Model):
             suffix += 1
             slug = f"{base_slug}-{suffix}"
 
-        store = cls.objects.create(name=name, slug=slug, owner=owner)
-        StoreMembership.objects.create(
-            store=store, user=owner, role=StoreMembership.ROLE_OWNER
-        )
+        # All-or-nothing: a store, its owner membership and its (behaviour-
+        # preserving) commercial config are created together or not at all --
+        # so onboarding can never leave an owner-less store or one that has no
+        # commerce config. RegisterUserSerializer already wraps this in its
+        # own atomic block; MyStoresView.post does not, hence the guard here.
+        with transaction.atomic():
+            store = cls.objects.create(name=name, slug=slug, owner=owner)
+            StoreMembership.objects.create(
+                store=store, user=owner, role=StoreMembership.ROLE_OWNER
+            )
+            # Onboarding materialises the commercial config with default
+            # values so a new store accepts orders without a manual step
+            # (online-sales foundation).
+            StoreCommerceSettings.objects.create(store=store)
         return store
 
 
@@ -1493,6 +1503,158 @@ class MerchantProfile(models.Model):
         )
 
 
+class StoreCommerceSettings(models.Model):
+    """Per-store commercial rules for the online storefront (online-sales
+    foundation, see docs/architecture/online-sales-foundation.md).
+
+    Same OneToOne + get_for_store() pattern as MerchantProfile /
+    LabelSettings / StorefrontAppearance -- deliberately not the global
+    StoreSettings singleton (that is a single row keyed by singleton_key=1
+    and cannot represent per-tenant rules), and deliberately not extra
+    columns on Store (the multi-tenant root only carries what the theme
+    engine needs).
+
+    Every default reproduces the behaviour that existed before this model:
+    orders accepted, both delivery and pickup allowed, no minimum, all three
+    payment methods accepted. A Store created before this model existed keeps
+    working with an all-default row (get_for_store() creates it lazily); the
+    onboarding path (Store.create_for_owner) also materialises one so a new
+    store never depends on a manual step.
+
+    The flag fields are real boolean columns, never a JSON blob: they form a
+    closed, known set that the checkout, the go-live check and the public
+    storefront all read by name.
+    """
+
+    # Payment-method flag <-> SaleOrder.payment_method code. Kept here so the
+    # checkout authority and the public projection share one mapping.
+    PAYMENT_METHOD_FLAGS = (
+        ("pix", "accepts_pix"),
+        ("card", "accepts_card"),
+        ("cash", "accepts_cash"),
+    )
+
+    store = models.OneToOneField(
+        Store,
+        on_delete=models.CASCADE,
+        related_name="commerce_settings",
+    )
+
+    orders_enabled = models.BooleanField(
+        default=True,
+        help_text="Whether the storefront currently accepts new orders.",
+    )
+    delivery_enabled = models.BooleanField(
+        default=True, help_text="Whether delivery is offered."
+    )
+    pickup_enabled = models.BooleanField(
+        default=True, help_text="Whether in-store pickup is offered."
+    )
+    minimum_order_value = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text="Minimum products subtotal (before delivery fee) to place an order.",
+    )
+    accepts_pix = models.BooleanField(default=True)
+    accepts_card = models.BooleanField(default=True)
+    accepts_cash = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Store commerce settings"
+        verbose_name_plural = "Store commerce settings"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(minimum_order_value__gte=Decimal("0.00")),
+                name="commerce_minimum_order_value_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(orders_enabled=False)
+                    | models.Q(delivery_enabled=True)
+                    | models.Q(pickup_enabled=True)
+                ),
+                name="commerce_open_store_needs_a_delivery_mode",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(orders_enabled=False)
+                    | models.Q(accepts_pix=True)
+                    | models.Q(accepts_card=True)
+                    | models.Q(accepts_cash=True)
+                ),
+                name="commerce_open_store_needs_a_payment_method",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        """Return a compact identifier for admin/debug purposes."""
+        return f"Commerce settings for {self.store_id}"
+
+    @classmethod
+    def get_for_store(cls, store: "Store") -> "StoreCommerceSettings":
+        """Return this store's commerce settings, creating a default row on first access."""
+        instance, _created = cls.objects.get_or_create(store=store)
+        return instance
+
+    @property
+    def enabled_delivery_methods(self) -> list[str]:
+        """Delivery-method codes (SaleOrder.DELIVERY_CHOICES) this store allows."""
+        methods = []
+        if self.delivery_enabled:
+            methods.append("delivery")
+        if self.pickup_enabled:
+            methods.append("pickup")
+        return methods
+
+    @property
+    def enabled_payment_methods(self) -> list[str]:
+        """Payment-method codes (SaleOrder.PAYMENT_CHOICES) this store accepts."""
+        return [
+            code
+            for code, flag in self.PAYMENT_METHOD_FLAGS
+            if getattr(self, flag)
+        ]
+
+    def allows_delivery_method(self, delivery_method: str) -> bool:
+        """Whether `delivery_method` ("delivery"/"pickup") is currently offered."""
+        return delivery_method in self.enabled_delivery_methods
+
+    def allows_payment_method(self, payment_method: str) -> bool:
+        """Whether `payment_method` ("pix"/"card"/"cash") is currently accepted."""
+        return payment_method in self.enabled_payment_methods
+
+    def clean(self) -> None:
+        """Enforce the commercial invariants for ModelForm/admin validation.
+
+        The same three rules are also DB CheckConstraints; this mirrors them
+        as friendly field errors before the row ever reaches the database.
+        """
+        super().clean()
+        errors: dict = {}
+
+        if self.minimum_order_value is not None and self.minimum_order_value < 0:
+            errors["minimum_order_value"] = "O pedido minimo nao pode ser negativo."
+
+        if self.orders_enabled and not self.enabled_delivery_methods:
+            errors["delivery_enabled"] = (
+                "Com pedidos ativos, habilite ao menos uma modalidade de entrega "
+                "(entrega ou retirada)."
+            )
+
+        if self.orders_enabled and not self.enabled_payment_methods:
+            errors["accepts_pix"] = (
+                "Com pedidos ativos, aceite ao menos uma forma de pagamento."
+            )
+
+        if errors:
+            raise ValidationError(errors)
+
+
 class BotConversation(models.Model):
     """Conversation state for the public rule-based bot."""
 
@@ -1618,6 +1780,30 @@ class SaleOrder(models.Model):
         ("cash", "Cash"),
     ]
 
+    # Payment lifecycle (online-sales foundation, see
+    # docs/architecture/online-sales-foundation.md). `payment_method` only
+    # ever recorded *which* method the customer picked; this records whether
+    # the money actually arrived. Internal codes are English, UI labels are
+    # Portuguese (see bipdelivery/api/payments.py / the frontend status map).
+    # Bip Flow does not process payments or refunds -- these states are moved
+    # by an operator confirming what happened outside the system, plus the
+    # two automatic transitions (a new PDV sale starts `paid`, cancelling an
+    # order settles or opens a refund).
+    PAYMENT_STATUS_PENDING = "pending"
+    PAYMENT_STATUS_PAID = "paid"
+    PAYMENT_STATUS_FAILED = "failed"
+    PAYMENT_STATUS_REFUND_PENDING = "refund_pending"
+    PAYMENT_STATUS_REFUNDED = "refunded"
+    PAYMENT_STATUS_CANCELLED = "cancelled"
+    PAYMENT_STATUS_CHOICES = [
+        (PAYMENT_STATUS_PENDING, "Pending"),
+        (PAYMENT_STATUS_PAID, "Paid"),
+        (PAYMENT_STATUS_FAILED, "Failed"),
+        (PAYMENT_STATUS_REFUND_PENDING, "Refund pending"),
+        (PAYMENT_STATUS_REFUNDED, "Refunded"),
+        (PAYMENT_STATUS_CANCELLED, "Cancelled"),
+    ]
+
     # Etapa 3 of the QR-code stock-exit evolution (see
     # docs/architecture/qrcode-stock-exit-evolution.md): distinguishes the
     # existing e-commerce/WhatsApp checkout from the new PDV (physical store,
@@ -1678,6 +1864,28 @@ class SaleOrder(models.Model):
     customer_email = models.EmailField(blank=True)
     delivery_method = models.CharField(max_length=16, choices=DELIVERY_CHOICES)
     payment_method = models.CharField(max_length=16, choices=PAYMENT_CHOICES)
+    payment_status = models.CharField(
+        max_length=16,
+        choices=PAYMENT_STATUS_CHOICES,
+        default=PAYMENT_STATUS_PENDING,
+        db_index=True,
+        help_text=(
+            "Whether payment was actually received (online-sales foundation). "
+            "Virtual/WhatsApp orders start 'pending'; a completed PDV sale "
+            "starts 'paid'. Transitions go through bipdelivery/api/payments.py."
+        ),
+    )
+    paid_at = models.DateTimeField(null=True, blank=True)
+    refunded_at = models.DateTimeField(null=True, blank=True)
+    payment_reference = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text=(
+            "Optional operator-entered reference for the payment/refund "
+            "(receipt id, transfer note). Never a card number or gateway token."
+        ),
+    )
     address = models.CharField(max_length=255, blank=True)
     neighborhood = models.CharField(max_length=255, blank=True)
     city = models.CharField(max_length=255, blank=True)
@@ -1946,6 +2154,71 @@ class SaleOrderItem(models.Model):
     def __str__(self) -> str:
         """Return a compact line summary."""
         return f"{self.product_name} x{self.quantity}"
+
+
+class PaymentStatusEvent(models.Model):
+    """Append-only audit row for every SaleOrder.payment_status change
+    (online-sales foundation, see docs/architecture/online-sales-foundation.md).
+
+    Same "ledger explains the denormalized column" idea as StockMovement for
+    stock. Rows are written only inside the same transaction as the status
+    change (see bipdelivery/api/payments.py) and are never mutated or deleted
+    through the API -- the dashboard reads them only via the authenticated
+    order detail. `source` leaves room for a future "gateway" origin without
+    a schema change, but nothing writes that value in this cycle.
+    """
+
+    SOURCE_SYSTEM = "system"
+    SOURCE_MANUAL = "manual"
+    SOURCE_GATEWAY = "gateway"
+    SOURCE_CHOICES = [
+        (SOURCE_SYSTEM, "System"),
+        (SOURCE_MANUAL, "Manual"),
+        (SOURCE_GATEWAY, "Gateway"),
+    ]
+
+    store = models.ForeignKey(
+        "Store",
+        on_delete=models.CASCADE,
+        related_name="payment_status_events",
+        help_text="Always the same store as `order` -- denormalized for tenant-scoped queries.",
+    )
+    order = models.ForeignKey(
+        SaleOrder,
+        on_delete=models.CASCADE,
+        related_name="payment_status_events",
+    )
+    previous_status = models.CharField(
+        max_length=16, choices=SaleOrder.PAYMENT_STATUS_CHOICES
+    )
+    new_status = models.CharField(
+        max_length=16, choices=SaleOrder.PAYMENT_STATUS_CHOICES
+    )
+    source = models.CharField(
+        max_length=16, choices=SOURCE_CHOICES, default=SOURCE_SYSTEM
+    )
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="payment_status_events",
+        help_text="The operator who made the change, when a human did (null for system transitions).",
+    )
+    reference = models.CharField(max_length=64, blank=True, default="")
+    note = models.CharField(max_length=200, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["id"]
+        indexes = [
+            models.Index(fields=["order", "id"]),
+            models.Index(fields=["store", "created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        """Return a compact transition summary for admin/debug purposes."""
+        return f"{self.order_id}: {self.previous_status} -> {self.new_status}"
 
 
 class StockMovement(models.Model):

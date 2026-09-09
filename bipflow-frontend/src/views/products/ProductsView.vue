@@ -278,6 +278,10 @@
       :is-delivery-regions-loading="isDeliveryRegionsLoading"
       :is-submitting="isSubmittingOrder"
       :is-whats-app-configured="isWhatsAppConfigured"
+      :store-accepts-orders="storeAcceptsOrders"
+      :allowed-delivery-methods="allowedDeliveryMethods"
+      :allowed-payment-methods="allowedPaymentMethods"
+      :minimum-order-value="minimumOrderValue"
       :profile="customerProfile"
       @close="isCartOpen = false"
       @clear-cart="clearCart"
@@ -321,15 +325,18 @@ import { useToast } from '@/composables/useToast'
 import type { Category } from '@/schemas/category.schema'
 import { authService } from '@/services/auth.service'
 import { categoryService } from '@/services/category.service'
+import { commerceSettingsService } from '@/services/commerceSettings.service'
 import { deliveryRegionService } from '@/services/delivery-region.service'
 import { Logger } from '@/services/logger'
 import { extractCheckoutErrorMessage, orderService } from '@/services/order.service'
 import { setSelectedStoreSlug } from '@/services/store-scope'
 import { storeSettingsService } from '@/services/store-settings.service'
 import { storefrontAppearanceService } from '@/services/storefront-appearance.service'
+import type { PublicCommerceSettings } from '@/schemas/commerceSettings.schema'
 import type { DeliveryRegion } from '@/types/delivery'
 import { getErrorRequestId } from '@/types/errors'
 import type {
+  CartCustomer,
   Product,
   ProductFilters as ProductFilterState,
   ProductSortOption,
@@ -403,6 +410,10 @@ const categories = ref<Category[]>([])
 const storefrontBanners = ref<PublicStorefrontBanner[]>([])
 const deliveryRegions = ref<DeliveryRegion[]>([])
 const storeWhatsAppPhone = ref('')
+// Online-sales foundation: the store's commercial rules for the cart. `null`
+// until loaded (or on a load failure) -- the cart then falls back to showing
+// every option and relies on the backend authority + returned error codes.
+const commerceSettings = ref<PublicCommerceSettings | null>(null)
 const isCartOpen = ref(false)
 
 // Guest checkout reinstated: CartDrawer needs a fresh profile (or null) at
@@ -551,6 +562,50 @@ function handleViewAllProducts(): void {
 const isWhatsAppConfigured = computed(() => storeWhatsAppPhone.value.length > 0)
 const isCompactDensity = computed(() => storefrontAppearance.value?.density === 'compact')
 
+// --- Online-sales foundation: the store's commercial rules for the cart ---
+//
+// A missing config (null: never loaded, or a load failure) falls back to
+// "everything allowed" -- the backend re-checks every rule and returns a
+// stable error code, so the UI staying permissive here only costs one extra
+// round trip, never a wrong order.
+const DEFAULT_PAYMENT_METHODS: CartCustomer['paymentMethod'][] = ['pix', 'card', 'cash']
+const DEFAULT_DELIVERY_METHODS: CartCustomer['deliveryMethod'][] = ['delivery', 'pickup']
+
+const allowedPaymentMethods = computed<CartCustomer['paymentMethod'][]>(() => {
+  const methods = commerceSettings.value?.payment_methods
+  return methods && methods.length > 0 ? methods : DEFAULT_PAYMENT_METHODS
+})
+const allowedDeliveryMethods = computed<CartCustomer['deliveryMethod'][]>(() => {
+  const methods = commerceSettings.value?.delivery_methods
+  return methods && methods.length > 0 ? methods : DEFAULT_DELIVERY_METHODS
+})
+const storeAcceptsOrders = computed(() => commerceSettings.value?.orders_enabled ?? true)
+const minimumOrderValue = computed(() => Number(commerceSettings.value?.minimum_order_value ?? 0))
+
+// When the resolved config changes (store switch, late load), snap the
+// selected options to the first still-valid one so the cart never submits a
+// stale/disabled choice.
+watch([allowedPaymentMethods, allowedDeliveryMethods], () => {
+  const patch: Partial<CartCustomer> = {}
+
+  if (!allowedPaymentMethods.value.includes(customer.value.paymentMethod)) {
+    patch.paymentMethod = allowedPaymentMethods.value[0]
+  }
+
+  if (!allowedDeliveryMethods.value.includes(customer.value.deliveryMethod)) {
+    patch.deliveryMethod = allowedDeliveryMethods.value[0]
+    if (patch.deliveryMethod === 'pickup') {
+      patch.deliveryRegionId = null
+      patch.deliveryRegionName = ''
+      patch.deliveryRegionFee = 0
+    }
+  }
+
+  if (Object.keys(patch).length > 0) {
+    updateCustomer(patch)
+  }
+})
+
 // Applied filters other than free-text search, shown as a discreet count
 // on the header's filter trigger.
 const activeFilterCount = computed(
@@ -685,6 +740,21 @@ async function loadStoreSettings(): Promise<void> {
   }
 }
 
+async function loadCommerceSettings(): Promise<void> {
+  const slug = publicStoreSlug.value || 'default'
+  try {
+    commerceSettings.value = await commerceSettingsService.getPublic(slug)
+  } catch (err) {
+    // On failure, leave it null: the cart shows every option and the backend
+    // stays the authority (it re-checks and returns a stable error code).
+    commerceSettings.value = null
+    Logger.warn('Failed to load public commerce settings', {
+      error: err instanceof Error ? err.message : 'unknown_error',
+      slug,
+    })
+  }
+}
+
 async function loadStorefrontBanners(): Promise<void> {
   const slug = publicStoreSlug.value
   if (!slug) {
@@ -805,6 +875,7 @@ watch(
         loadCategories(),
         loadDeliveryRegions(),
         loadStoreSettings(),
+        loadCommerceSettings(),
         loadStorefrontBanners(),
         fetchProducts(),
       ])
@@ -833,6 +904,7 @@ onMounted(async () => {
     loadCategories(),
     loadDeliveryRegions(),
     loadStoreSettings(),
+    loadCommerceSettings(),
     loadStorefrontBanners(),
   ])
 })
@@ -976,6 +1048,19 @@ function canOpenWhatsAppCheckout(): boolean {
 
   if (!isWhatsAppConfigured.value) {
     toast.info('WhatsApp da loja ainda nao configurado.')
+    return false
+  }
+
+  // Online-sales foundation UX guard (the backend re-checks both).
+  if (!storeAcceptsOrders.value) {
+    toast.info('Esta loja nao esta aceitando pedidos no momento.')
+    return false
+  }
+
+  if (minimumOrderValue.value > 0 && subtotal.value < minimumOrderValue.value) {
+    toast.info(
+      `O pedido minimo desta loja e de R$ ${minimumOrderValue.value.toFixed(2)}.`,
+    )
     return false
   }
 

@@ -18,7 +18,12 @@ The command verifies:
 - at least one dashboard operator exists;
 - store WhatsApp is configured;
 - catalog has sellable products with stock;
-- at least one active delivery region exists.
+- each delivery-enabled store has at least one active delivery region
+  (pickup-only stores no longer require one);
+- each active store has a valid commercial config accepting orders
+  (`commerce` check: non-negative minimum, a delivery mode and a payment
+  method while orders are enabled; a store with `orders_enabled=false` is a
+  strict-mode blocker, reported as a warning otherwise).
 
 ## Manual Smoke
 
@@ -28,8 +33,13 @@ The command verifies:
 4. Finish checkout.
 5. Confirm the generated WhatsApp message opens for the store number.
 6. Log in to the dashboard.
-7. Confirm the order appears in recent sales.
+7. Confirm the order appears in recent sales with `Pagamento pendente`.
 8. Move the order status from `Novo` to `Enviado` or `Cancelado`.
+9. In the order detail, confirm the payment (`Confirmar pagamento`) and
+   check that the payment badge and history update without a reload.
+10. Open **Configurações → Vendas online** and confirm the store's
+    commercial rules (accepting orders, delivery modes, payment methods,
+    minimum order) render and save.
 
 ## Authentication And Session Smoke
 

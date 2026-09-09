@@ -40,6 +40,29 @@ export function extractCheckoutErrorMessage(error: unknown): string {
       return 'WhatsApp da loja ainda nao configurado.'
     }
 
+    // Online-sales foundation: the store's commercial rules rejected this
+    // order. The backend already sends a clear `detail`, but pin the wording
+    // per code so it stays stable regardless of backend copy tweaks.
+    if (data?.code === 'store_not_accepting_orders') {
+      return 'Esta loja nao esta aceitando pedidos no momento.'
+    }
+
+    if (data?.code === 'delivery_method_unavailable') {
+      return 'A forma de entrega escolhida nao esta disponivel nesta loja.'
+    }
+
+    if (data?.code === 'payment_method_unavailable') {
+      return 'A forma de pagamento escolhida nao e aceita por esta loja.'
+    }
+
+    if (data?.code === 'minimum_order_not_reached') {
+      return data.detail ?? 'O valor do pedido esta abaixo do minimo da loja.'
+    }
+
+    if (data?.code === 'delivery_region_unavailable') {
+      return 'A regiao de entrega selecionada nao esta disponivel nesta loja.'
+    }
+
     if (data?.code === 'idempotency_key_conflict') {
       return 'Este checkout mudou desde a ultima tentativa. Revise o pedido e tente novamente.'
     }

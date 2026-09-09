@@ -59,6 +59,31 @@
 
           <!-- Step 1: review the order -->
           <div v-else-if="step === 'review'">
+            <div
+              v-if="!storeAcceptsOrders"
+              data-cy="cart-store-closed-notice"
+              class="mb-3 rounded-[var(--store-radius-sm)] border border-[#F59E0B]/40 bg-[#FEF3C7] px-3 py-2.5 text-[0.8125rem] font-medium text-[#92400E]"
+              role="status"
+            >
+              Esta loja não está aceitando pedidos no momento. Você pode montar o
+              pedido e finalizá-lo quando a loja reabrir.
+            </div>
+
+            <div
+              v-else-if="minimumOrderValue > 0"
+              data-cy="cart-minimum-order-notice"
+              class="mb-3 rounded-[var(--store-radius-sm)] px-3 py-2 text-[0.75rem] font-medium"
+              :class="isBelowMinimumOrder ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[var(--store-bg)] text-[var(--store-text-muted)]'"
+            >
+              <template v-if="isBelowMinimumOrder">
+                Faltam {{ formatBRL(missingForMinimum) }} para o pedido mínimo de
+                {{ formatBRL(minimumOrderValue) }}.
+              </template>
+              <template v-else>
+                Pedido mínimo de {{ formatBRL(minimumOrderValue) }} atingido.
+              </template>
+            </div>
+
             <div class="mb-2 flex items-center justify-between">
               <h3 class="text-[0.8125rem] font-semibold text-[var(--store-text-muted)]">Itens</h3>
               <button
@@ -255,10 +280,16 @@
                   <select
                     :value="customer.deliveryMethod"
                     class="cart-field"
+                    data-cy="checkout-field-delivery-method"
                     @change="handleDeliveryMethodChange"
                   >
-                    <option value="delivery">Receber em casa</option>
-                    <option value="pickup">Retirar na loja</option>
+                    <option
+                      v-for="option in deliveryMethodOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
                   </select>
                 </label>
 
@@ -269,11 +300,16 @@
                   <select
                     :value="customer.paymentMethod"
                     class="cart-field"
+                    data-cy="checkout-field-payment-method"
                     @change="handlePaymentMethodChange"
                   >
-                    <option value="pix">Pix</option>
-                    <option value="card">Cartao</option>
-                    <option value="cash">Dinheiro</option>
+                    <option
+                      v-for="option in paymentMethodOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
                   </select>
                 </label>
               </div>
@@ -439,7 +475,7 @@
             <p
               v-if="footerMessage"
               class="mt-2 text-[0.75rem] font-medium"
-              :class="isWhatsAppConfigured ? 'text-[var(--store-text-muted)]' : 'text-[#B45309]'"
+              :class="(isWhatsAppConfigured && !hasBlockingCommerceNotice) ? 'text-[var(--store-text-muted)]' : 'text-[#B45309]'"
             >
               {{ footerMessage }}
             </p>
@@ -464,7 +500,7 @@
             <p
               v-if="footerMessage"
               class="mt-2 text-[0.75rem] font-medium"
-              :class="isWhatsAppConfigured ? 'text-[var(--store-text-muted)]' : 'text-[#B45309]'"
+              :class="(isWhatsAppConfigured && !hasBlockingCommerceNotice) ? 'text-[var(--store-text-muted)]' : 'text-[#B45309]'"
             >
               {{ footerMessage }}
             </p>
@@ -545,10 +581,20 @@ const props = withDefaults(defineProps<{
   isDeliveryRegionsLoading?: boolean
   isSubmitting?: boolean
   isWhatsAppConfigured: boolean
+  // Online-sales foundation: the store's commercial rules. Defaults keep the
+  // cart working before the config loads (backend stays the authority).
+  storeAcceptsOrders?: boolean
+  allowedDeliveryMethods?: CartCustomer['deliveryMethod'][]
+  allowedPaymentMethods?: CartCustomer['paymentMethod'][]
+  minimumOrderValue?: number
   profile: CustomerProfile | null
 }>(), {
   isDeliveryRegionsLoading: false,
   isSubmitting: false,
+  storeAcceptsOrders: true,
+  allowedDeliveryMethods: () => ['delivery', 'pickup'],
+  allowedPaymentMethods: () => ['pix', 'card', 'cash'],
+  minimumOrderValue: 0,
 })
 
 const emit = defineEmits<{
@@ -701,6 +747,37 @@ const isDeliverySelected = computed(() => props.customer.deliveryMethod === 'del
 const needsGuestAddress = computed(() => isDeliverySelected.value && !hasCompleteProfileAddress.value)
 const needsDeliveryRegion = computed(() => isDeliverySelected.value && props.deliveryRegions.length > 0)
 
+// --- Online-sales foundation: the store's commercial rules ---
+//
+// The <select>s only offer what the store currently allows; ProductsView
+// already snaps `customer.deliveryMethod` / `paymentMethod` to the first
+// valid option when the config changes, so the bound value always matches an
+// option. The submit gate + the closed-store / minimum-order notices are
+// derived below and folded into `checkoutIssues`.
+const DELIVERY_METHOD_LABELS: Record<CartCustomer['deliveryMethod'], string> = {
+  delivery: 'Receber em casa',
+  pickup: 'Retirar na loja',
+}
+const PAYMENT_METHOD_LABELS: Record<CartCustomer['paymentMethod'], string> = {
+  pix: 'Pix',
+  card: 'Cartao',
+  cash: 'Dinheiro',
+}
+
+const deliveryMethodOptions = computed(() =>
+  props.allowedDeliveryMethods.map((value) => ({ value, label: DELIVERY_METHOD_LABELS[value] })),
+)
+const paymentMethodOptions = computed(() =>
+  props.allowedPaymentMethods.map((value) => ({ value, label: PAYMENT_METHOD_LABELS[value] })),
+)
+
+const isBelowMinimumOrder = computed(
+  () => props.minimumOrderValue > 0 && props.subtotal < props.minimumOrderValue,
+)
+const missingForMinimum = computed(() =>
+  isBelowMinimumOrder.value ? props.minimumOrderValue - props.subtotal : 0,
+)
+
 const checkoutIssues = computed<ValidationIssue[]>(() => {
   const issues: ValidationIssue[] = []
 
@@ -718,6 +795,21 @@ const checkoutIssues = computed<ValidationIssue[]>(() => {
 
   if (!props.isWhatsAppConfigured) {
     issues.push({ kind: 'structural', message: 'WhatsApp da loja ainda não configurado.' })
+  }
+
+  // Online-sales foundation: the store's commercial rules (backend re-checks).
+  if (!props.storeAcceptsOrders) {
+    issues.push({
+      kind: 'structural',
+      message: 'Esta loja não está aceitando pedidos no momento.',
+    })
+  }
+
+  if (isBelowMinimumOrder.value) {
+    issues.push({
+      kind: 'structural',
+      message: `Faltam ${formatBRL(missingForMinimum.value)} em produtos para o pedido mínimo de ${formatBRL(props.minimumOrderValue)}.`,
+    })
   }
 
   if (isGuestIdentity.value) {
@@ -773,6 +865,8 @@ const canContinue = computed(() => (
   props.itemCount > 0
   && props.isWhatsAppConfigured
   && !stockLimitedItemLabel.value
+  && props.storeAcceptsOrders
+  && !isBelowMinimumOrder.value
 ))
 
 // One message slot in the footer, appropriate to the current step. In
@@ -782,17 +876,36 @@ const canContinue = computed(() => (
 // field issues are surfaced per-field plus the discreet banner below, not
 // duplicated here.
 const footerMessage = computed(() => {
+  if (!props.storeAcceptsOrders) {
+    return 'Esta loja não está aceitando pedidos no momento.'
+  }
   if (!props.isWhatsAppConfigured) {
     return 'WhatsApp da loja ainda não configurado.'
+  }
+  if (isBelowMinimumOrder.value) {
+    return `Faltam ${formatBRL(missingForMinimum.value)} em produtos para o pedido mínimo de ${formatBRL(props.minimumOrderValue)}.`
   }
   return stockLimitedItemLabel.value
     ? `Ajuste a quantidade de ${stockLimitedItemLabel.value} ao estoque disponível.`
     : ''
 })
 
+// A structural blocker (closed store, below minimum, no WhatsApp) is shown
+// in a warning tone rather than the neutral one -- reuses the existing
+// `isWhatsAppConfigured ? muted : warning` class binding in the template.
+const hasBlockingCommerceNotice = computed(
+  () => !props.storeAcceptsOrders || isBelowMinimumOrder.value,
+)
+
 const submitButtonLabel = computed(() => {
   if (props.isSubmitting) {
     return 'Registrando pedido...'
+  }
+  if (!props.storeAcceptsOrders) {
+    return 'Loja fechada para pedidos'
+  }
+  if (isBelowMinimumOrder.value) {
+    return 'Pedido mínimo não atingido'
   }
 
   return props.isWhatsAppConfigured ? 'Finalizar pedido' : 'WhatsApp indisponível'

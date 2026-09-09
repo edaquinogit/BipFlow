@@ -14,6 +14,8 @@ function buildOrderDetail(overrides: Partial<SaleOrderDetail> = {}): SaleOrderDe
     customer_email: 'cliente@example.com',
     delivery_method: 'delivery',
     payment_method: 'pix',
+    payment_status: 'pending',
+    paid_at: null,
     delivery_region_name: 'Centro',
     performed_by_username: null,
     subtotal: '50.00',
@@ -47,6 +49,10 @@ function buildOrderDetail(overrides: Partial<SaleOrderDetail> = {}): SaleOrderDe
     tracking_url: '',
     shipped_at: null,
     delivered_at: null,
+    refunded_at: null,
+    payment_reference: '',
+    payment_status_events: [],
+    available_payment_actions: [],
     ...overrides,
   }
 }
@@ -216,5 +222,80 @@ describe('SaleOrderDetailModal', () => {
 
     expect(wrapper.text()).toContain('Não foi possível marcar o pedido como enviado. Tente novamente.')
     expect(wrapper.text()).toContain('Cliente Teste')
+  })
+
+  // --- Online-sales foundation: payment section ---
+
+  it('renders the payment badge and confirmed-time for a paid order', () => {
+    const wrapper = mountModal({
+      order: buildOrderDetail({
+        payment_status: 'paid',
+        paid_at: '2026-06-21T12:00:00Z',
+        payment_reference: 'TED 4432',
+        available_payment_actions: [],
+      }),
+    })
+
+    expect(wrapper.get('[data-cy="order-detail-payment-badge"]').text()).toBe('Pago')
+    const section = wrapper.get('[data-cy="order-detail-payment"]').text()
+    expect(section).toContain('Pago em')
+    expect(section).toContain('TED 4432')
+    expect(wrapper.find('[data-cy="order-detail-payment-actions"]').exists()).toBe(false)
+  })
+
+  it('offers the operator actions the backend allows', async () => {
+    const wrapper = mountModal({
+      order: buildOrderDetail({ payment_status: 'pending', available_payment_actions: ['paid', 'failed'] }),
+    })
+
+    expect(wrapper.get('[data-cy="payment-action-paid"]').text()).toBe('Confirmar pagamento')
+    expect(wrapper.get('[data-cy="payment-action-failed"]').text()).toBe('Registrar falha no pagamento')
+
+    await wrapper.get('[data-cy="payment-action-paid"]').trigger('click')
+    expect(wrapper.emitted('payment')).toEqual([[{ target: 'paid' }]])
+  })
+
+  it('shows the refund-pending warning and, for a viewer, no action buttons', () => {
+    const wrapper = mountModal({
+      canManage: false,
+      order: buildOrderDetail({
+        status: 'cancelled',
+        payment_status: 'refund_pending',
+        available_payment_actions: ['refunded'],
+      }),
+    })
+
+    expect(wrapper.get('[data-cy="order-detail-refund-warning"]').text())
+      .toContain('O Bip Flow não processa reembolsos')
+    // Viewer: no "e confirme abaixo" and no buttons.
+    expect(wrapper.get('[data-cy="order-detail-refund-warning"]').text()).not.toContain('confirme abaixo')
+    expect(wrapper.find('[data-cy="order-detail-payment-actions"]').exists()).toBe(false)
+    // But the badge is still visible.
+    expect(wrapper.get('[data-cy="order-detail-payment-badge"]').text()).toBe('Reembolso pendente')
+  })
+
+  it('renders the payment history when events exist', () => {
+    const wrapper = mountModal({
+      order: buildOrderDetail({
+        payment_status: 'paid',
+        available_payment_actions: [],
+        payment_status_events: [
+          {
+            id: 1,
+            previous_status: 'pending',
+            new_status: 'paid',
+            source: 'manual',
+            performed_by_username: 'caixa1',
+            reference: '',
+            note: '',
+            created_at: '2026-06-21T12:00:00Z',
+          },
+        ],
+      }),
+    })
+
+    const history = wrapper.get('[data-cy="order-detail-payment-history"]').text()
+    expect(history).toContain('Pago')
+    expect(history).toContain('caixa1')
   })
 })

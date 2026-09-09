@@ -60,12 +60,14 @@ from .models import (
     LoginAttempt,
     MerchantProfile,
     MFABackupCode,
+    PaymentStatusEvent,
     Product,
     ProductVariant,
     SaleOrder,
     SaleOrderItem,
     StockMovement,
     Store,
+    StoreCommerceSettings,
     StorefrontBanner,
     StorefrontAppearance,
     StoreMembership,
@@ -106,16 +108,19 @@ from .serializers import (
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     ProductSerializer,
+    PublicStoreCommerceSettingsSerializer,
     PublicStorefrontAppearanceSerializer,
     PublicStoreSettingsSerializer,
     RegisterUserSerializer,
     SaleOrderBreakdownSerializer,
     SaleOrderCustomerInsightsSerializer,
     SaleOrderDetailSerializer,
+    SaleOrderPaymentUpdateSerializer,
     SaleOrderSerializer,
     SaleOrderStatusUpdateSerializer,
     SaleOrderSummarySerializer,
     SaleOrderTimeseriesPointSerializer,
+    StoreCommerceSettingsSerializer,
     StockMovementCreateSerializer,
     StockMovementSerializer,
     StoreAppearanceSettingsSerializer,
@@ -129,6 +134,11 @@ from .serializers import (
     StoreScopedTokenObtainPairSerializer,
     StoreSerializer,
     StoreSettingsSerializer,
+)
+from .payments import (
+    PaymentTransitionError,
+    available_manual_targets,
+    transition_payment,
 )
 from .shipping import build_tracking_url, get_allowed_next_statuses
 from .stock import StockMovementError, apply_order_cancellation, apply_stock_movement
@@ -972,6 +982,17 @@ class SaleOrderViewSet(StoreScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
         if channel_filter in (SaleOrder.CHANNEL_VIRTUAL, SaleOrder.CHANNEL_LOJA_FISICA):
             queryset = queryset.filter(channel=channel_filter)
 
+        # Online-sales foundation: narrow the list (and, deliberately, the
+        # aggregates that build on this queryset) to a single payment state.
+        payment_status_filter = self.request.query_params.get(
+            "payment_status", ""
+        ).strip()
+        valid_payment_statuses = {
+            choice[0] for choice in SaleOrder.PAYMENT_STATUS_CHOICES
+        }
+        if payment_status_filter in valid_payment_statuses:
+            queryset = queryset.filter(payment_status=payment_status_filter)
+
         search_term = self.request.query_params.get("search", "").strip()
         if search_term:
             queryset = queryset.filter(
@@ -1088,6 +1109,66 @@ class SaleOrderViewSet(StoreScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
 
         return Response(self.get_serializer(order).data, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=["patch"], url_path="payment")
+    def update_payment(self, request, pk=None):
+        """Record what happened to an order's payment (online-sales foundation).
+
+        Same shape as ``update_status`` -- a scoped detail action, not a
+        loose route. Lets an authorised operator confirm a payment, register
+        a failure, re-open a failed payment for a new attempt, or confirm
+        that an external refund was carried out. The transitions themselves
+        (and their validity from the current state) live in
+        bipdelivery/api/payments.py; ``cancelled`` / ``refund_pending`` are
+        never reachable here -- those only come from order cancellation.
+
+        Bip Flow does not move money: "confirm refund" means "I confirm the
+        refund was done outside the system", never an executed refund.
+        """
+        if not has_dashboard_write_access(request.user):
+            raise PermissionDenied(
+                "Voce nao possui permissao para alterar pagamentos."
+            )
+
+        order = self.get_object()
+        store = self.get_request_store()
+        serializer = SaleOrderPaymentUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        target = serializer.validated_data["payment_status"]
+        allowed = available_manual_targets(order)
+        if target != order.payment_status and target not in allowed:
+            raise serializers.ValidationError(
+                {
+                    "payment_status": (
+                        "Acao de pagamento nao permitida a partir do estado atual "
+                        f'("{order.get_payment_status_display()}").'
+                    )
+                }
+            )
+
+        try:
+            event = transition_payment(
+                order,
+                to_status=target,
+                source=PaymentStatusEvent.SOURCE_MANUAL,
+                performed_by=request.user,
+                reference=serializer.validated_data.get("reference", ""),
+                note=serializer.validated_data.get("note", ""),
+            )
+        except PaymentTransitionError as exc:
+            raise serializers.ValidationError(
+                {"payment_status": exc.message}
+            ) from exc
+
+        if event is not None:
+            invalidate_dashboard_cache(store.id)
+
+        order.refresh_from_db()
+        return Response(
+            SaleOrderDetailSerializer(order, context=self.get_serializer_context()).data,
+            status=status.HTTP_200_OK,
+        )
+
     @action(detail=False, methods=["get"], url_path="summary")
     def summary(self, request):
         """Aggregate real sales revenue for the dashboard's revenue card.
@@ -1099,15 +1180,49 @@ class SaleOrderViewSet(StoreScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
 
         def compute():
             active_orders = self.get_queryset().exclude(status="cancelled")
+            in_window = self._active_orders_in_window(window)
 
-            current = self._active_orders_in_window(window).aggregate(
-                revenue_total=Sum("total"), orders_count=Count("id")
+            # One pass over the non-cancelled in-window orders: overall volume
+            # plus the paid / pending slices that separate money actually
+            # received from orders merely created (online-sales foundation).
+            paid = Q(payment_status=SaleOrder.PAYMENT_STATUS_PAID)
+            pending = Q(payment_status=SaleOrder.PAYMENT_STATUS_PENDING)
+            current = in_window.aggregate(
+                revenue_total=Sum("total"),
+                orders_count=Count("id"),
+                paid_revenue_total=Sum("total", filter=paid),
+                paid_orders_count=Count("id", filter=paid),
+                pending_payment_total=Sum("total", filter=pending),
+                pending_payment_count=Count("id", filter=pending),
             )
             revenue_total = current["revenue_total"] or Decimal("0.00")
             orders_count = current["orders_count"] or 0
             average_ticket = (
                 (revenue_total / orders_count) if orders_count else Decimal("0.00")
             )
+            paid_revenue_total = current["paid_revenue_total"] or Decimal("0.00")
+            paid_orders_count = current["paid_orders_count"] or 0
+            pending_payment_total = current["pending_payment_total"] or Decimal("0.00")
+            pending_payment_count = current["pending_payment_count"] or 0
+
+            # `refund_pending` only ever exists on a cancelled order (the
+            # paid -> refund_pending transition happens *during* cancellation),
+            # so it MUST be measured over a base that keeps cancelled orders --
+            # `in_window` above excludes them. This is the money owed back to
+            # customers that has not yet been confirmed as refunded.
+            refund_pending_window = self.get_queryset().filter(
+                created_at__gte=window.start,
+                payment_status=SaleOrder.PAYMENT_STATUS_REFUND_PENDING,
+            )
+            if window.end is not None:
+                refund_pending_window = refund_pending_window.filter(
+                    created_at__lt=window.end
+                )
+            refund_row = refund_pending_window.aggregate(
+                total=Sum("total"), count=Count("id")
+            )
+            refund_pending_total = refund_row["total"] or Decimal("0.00")
+            refund_pending_count = refund_row["count"] or 0
 
             previous_revenue = active_orders.filter(
                 created_at__gte=window.previous_start,
@@ -1136,6 +1251,12 @@ class SaleOrderViewSet(StoreScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
                     "average_ticket": average_ticket,
                     "comparison_previous_period": comparison_previous_period,
                     "comparison_same_period_last_year": comparison_same_period_last_year,
+                    "paid_revenue_total": paid_revenue_total,
+                    "paid_orders_count": paid_orders_count,
+                    "pending_payment_total": pending_payment_total,
+                    "pending_payment_count": pending_payment_count,
+                    "refund_pending_total": refund_pending_total,
+                    "refund_pending_count": refund_pending_count,
                 }
             )
             return serializer.data
@@ -1271,11 +1392,30 @@ class SaleOrderViewSet(StoreScopedViewSetMixin, viewsets.ReadOnlyModelViewSet):
                 for row in top_products_rows
             ]
 
-            by_payment_method = list(
-                active_orders.values("payment_method")
-                .annotate(revenue_total=Sum("total"), orders_count=Count("id"))
+            by_payment_method = [
+                {
+                    "payment_method": row["payment_method"],
+                    "revenue_total": row["revenue_total"] or Decimal("0.00"),
+                    "orders_count": row["orders_count"],
+                    # Confirmed-money slice per method (online-sales
+                    # foundation): revenue_total stays as order volume for
+                    # contract compatibility.
+                    "paid_revenue_total": row["paid_revenue_total"]
+                    or Decimal("0.00"),
+                }
+                for row in active_orders.values("payment_method")
+                .annotate(
+                    revenue_total=Sum("total"),
+                    orders_count=Count("id"),
+                    paid_revenue_total=Sum(
+                        "total",
+                        filter=Q(
+                            payment_status=SaleOrder.PAYMENT_STATUS_PAID
+                        ),
+                    ),
+                )
                 .order_by("-revenue_total")
-            )
+            ]
             by_status = list(
                 orders.values("status")
                 .annotate(orders_count=Count("id"))
@@ -1884,6 +2024,81 @@ class MerchantProfileView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+class StoreCommerceSettingsView(APIView):
+    """Read/update the active store's commercial rules (online-sales foundation).
+
+    Whether the storefront accepts orders, which delivery modes and payment
+    methods it offers, and the minimum order value. Tenant resolved from the
+    authenticated store context via resolve_request_store() (trusted JWT
+    claim / X-Store-Slug header, never a client-supplied id). Same membership
+    gate the merchant-profile / storefront-appearance endpoints use: any
+    member may read, owner/manager (or staff) may edit. PATCH is partial.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        store = resolve_request_store(request)
+        if not can_read_storefront_dashboard_store(request, store):
+            return permission_denied_error(
+                "Voce nao possui permissao para acessar as configuracoes de vendas desta loja."
+            )
+
+        settings_row = StoreCommerceSettings.get_for_store(store)
+        return Response(
+            StoreCommerceSettingsSerializer(settings_row).data,
+            status=status.HTTP_200_OK,
+        )
+
+    def patch(self, request, *args, **kwargs):
+        store = resolve_request_store(request)
+        if not can_read_storefront_dashboard_store(request, store):
+            return permission_denied_error(
+                "Voce nao possui permissao para acessar as configuracoes de vendas desta loja."
+            )
+        if not can_edit_storefront_dashboard_store(request, store):
+            return permission_denied_error(
+                "Voce nao possui permissao para editar as configuracoes de vendas desta loja."
+            )
+
+        settings_row = StoreCommerceSettings.get_for_store(store)
+        serializer = StoreCommerceSettingsSerializer(
+            settings_row, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class PublicStoreCommerceSettingsView(APIView):
+    """Public, unauthenticated commercial rules for one store's vitrine.
+
+    Looked up by the slug in the URL (same pattern as
+    PublicStorefrontAppearanceView): any visitor may read any *active*
+    store's sanitised config -- orders on/off, delivery modes, payment
+    methods, minimum order value. Never exposes ids, timestamps or the
+    tenant linkage, and never lazily creates a row for a store that has
+    none (defaults are behaviour-preserving anyway).
+    """
+
+    permission_classes = []
+    authentication_classes = []
+
+    def get(self, request, *args, **kwargs):
+        store = Store.objects.filter(slug=kwargs["slug"], is_active=True).first()
+        if store is None:
+            return not_found_error("Loja nao encontrada.")
+
+        settings_row = (
+            StoreCommerceSettings.objects.filter(store=store).first()
+            or StoreCommerceSettings(store=store)
+        )
+        return Response(
+            PublicStoreCommerceSettingsSerializer(settings_row).data,
+            status=status.HTTP_200_OK,
+        )
+
+
 class StorefrontAppearanceView(APIView):
     """Read/update extended storefront personalization for the active store.
 
@@ -2464,6 +2679,34 @@ class CustomerFeedbackCreateView(APIView):
         )
 
 
+# Commercial-rule rejection codes for the checkout (online-sales foundation).
+# All well-formed requests that violate a store's commercial configuration:
+# HTTP 422. The frontend maps by `code`, not status.
+COMMERCE_REJECTION_STATUS = status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+class _CheckoutCommerceError(Exception):
+    """A checkout attempt that violates the store's commercial configuration.
+
+    Carries a ready DRF Response so the view can return it verbatim whether
+    the rule was checked up front or only once the server had recalculated
+    the subtotal (raised from inside the reservation transaction).
+    """
+
+    def __init__(self, code: str, detail: str):
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+
+    @property
+    def response(self) -> Response:
+        """The 422 body: a stable machine code plus a human-readable detail."""
+        return Response(
+            {"code": self.code, "detail": self.detail},
+            status=COMMERCE_REJECTION_STATUS,
+        )
+
+
 class CheckoutWhatsAppView(APIView):
     """
     Prepare a checkout note and WhatsApp redirect for the public catalog.
@@ -2496,6 +2739,47 @@ class CheckoutWhatsAppView(APIView):
     @staticmethod
     def _delivery_label(delivery_method: str) -> str:
         return "Delivery" if delivery_method == "delivery" else "Retirada"
+
+    @staticmethod
+    def _check_commerce_rules(
+        store: Store,
+        commerce: StoreCommerceSettings,
+        customer: dict,
+    ) -> None:
+        """Reject a checkout that violates the store's commercial config.
+
+        Runs before any stock is touched or any order row is created. Only
+        the rules that don't need the recalculated subtotal live here; the
+        minimum-order check happens in `_reserve_cart_stock`, still before the
+        decrement. Raises `_CheckoutCommerceError` (HTTP 422) with a stable
+        `code`.
+        """
+        if not store.is_active:
+            raise _CheckoutCommerceError(
+                "store_not_accepting_orders",
+                "Esta loja nao esta disponivel no momento.",
+            )
+
+        if not commerce.orders_enabled:
+            raise _CheckoutCommerceError(
+                "store_not_accepting_orders",
+                "Esta loja nao esta aceitando pedidos no momento.",
+            )
+
+        delivery_method = customer["delivery_method"]
+        if not commerce.allows_delivery_method(delivery_method):
+            label = "entrega" if delivery_method == "delivery" else "retirada"
+            raise _CheckoutCommerceError(
+                "delivery_method_unavailable",
+                f"A modalidade de {label} nao esta disponivel nesta loja.",
+            )
+
+        payment_method = customer["payment_method"]
+        if not commerce.allows_payment_method(payment_method):
+            raise _CheckoutCommerceError(
+                "payment_method_unavailable",
+                "A forma de pagamento escolhida nao e aceita por esta loja.",
+            )
 
     @staticmethod
     def _aggregate_product_quantities(cart_items) -> dict[int, int]:
@@ -2928,7 +3212,11 @@ class CheckoutWhatsAppView(APIView):
         return normalized_items, subtotal
 
     def _reserve_cart_stock(
-        self, cart_items, store: Store
+        self,
+        cart_items,
+        store: Store,
+        *,
+        minimum_order_value: Decimal = Decimal("0.00"),
     ) -> tuple[list[dict], Decimal, dict[int, Product]]:
         quantities_by_product_id = self._aggregate_product_quantities(cart_items)
         products_by_id = self._lock_cart_products(quantities_by_product_id, store)
@@ -2942,6 +3230,19 @@ class CheckoutWhatsAppView(APIView):
             variants_by_id,
             products_with_active_variants,
         )
+
+        # Minimum-order rule (online-sales foundation): compared against the
+        # server-recalculated products subtotal, never a client value, and
+        # still before any stock is decremented below.
+        if minimum_order_value and subtotal < minimum_order_value:
+            raise _CheckoutCommerceError(
+                "minimum_order_not_reached",
+                (
+                    f"O pedido minimo desta loja e de R$ {minimum_order_value:.2f}. "
+                    f"Faltam R$ {(minimum_order_value - subtotal):.2f} em produtos."
+                ),
+            )
+
         timestamp = timezone.now()
 
         for product_id, quantity in quantities_by_product_id.items():
@@ -3039,13 +3340,13 @@ class CheckoutWhatsAppView(APIView):
                 ).first()
 
                 if delivery_region is None:
-                    raise serializers.ValidationError(
-                        {
-                            "customer": {
-                                "delivery_region_id": "Selected delivery region is unavailable"
-                            }
-                        }
-                    )
+                    # Region missing, inactive, or belonging to another tenant
+                    # (the filter is store-scoped) -- one stable code
+                    # (online-sales foundation).
+                    return _CheckoutCommerceError(
+                        "delivery_region_unavailable",
+                        "A regiao de entrega selecionada nao esta disponivel nesta loja.",
+                    ).response
             elif (
                 profile is not None
                 and profile.delivery_region_id
@@ -3089,10 +3390,20 @@ class CheckoutWhatsAppView(APIView):
             if idempotent_response is not None:
                 return idempotent_response
 
+        # Commercial-rule authority (online-sales foundation). Checked after the
+        # idempotent-replay short-circuit (a retry of an order that already
+        # exists must still return it, even if the store just closed) and
+        # before anything is created or decremented. The minimum-order rule is
+        # applied inside _reserve_cart_stock, against the recalculated subtotal.
+        commerce = StoreCommerceSettings.get_for_store(store)
+
         try:
+            self._check_commerce_rules(store, commerce, customer)
             with transaction.atomic():
                 normalized_items, subtotal, products_by_id = self._reserve_cart_stock(
-                    cart_items, store
+                    cart_items,
+                    store,
+                    minimum_order_value=commerce.minimum_order_value,
                 )
 
                 delivery_fee = Decimal("0.00")
@@ -3254,6 +3565,20 @@ class CheckoutWhatsAppView(APIView):
                     data=self._order_response_payload(sale_order)
                 )
                 output_serializer.is_valid(raise_exception=True)
+        except _CheckoutCommerceError as exc:
+            logger.warning(
+                "checkout.rejected",
+                extra=self._checkout_log_extra(
+                    request,
+                    store,
+                    event="checkout.rejected",
+                    code=exc.code,
+                    delivery_method=customer["delivery_method"],
+                    payment_method=customer["payment_method"],
+                    items_count=len(cart_items),
+                ),
+            )
+            return exc.response
         except (IntegrityError, serializers.ValidationError):
             if idempotency_key:
                 idempotent_response = self._idempotent_response_or_conflict(

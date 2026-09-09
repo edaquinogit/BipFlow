@@ -10,13 +10,17 @@ import {
   getChannelLabel,
   getDeliveryMethodLabel,
   getPaymentLabel,
+  getPaymentStatusBadgeClass,
+  getPaymentStatusLabel,
   getSaleStatusBadgeClass,
   getSaleStatusLabel,
+  PAYMENT_STATUS_FILTER_OPTIONS,
   SALE_STATUS_OPTIONS,
   SALE_TIMELINE_STEPS,
 } from '@/constants/saleOrder';
 import type {
   PaginatedSalesOrdersResponse,
+  PaymentStatus,
   SaleOrder,
   SaleOrderChannel,
   SaleOrderDetail,
@@ -59,13 +63,18 @@ const cancelConfirmMessage = computed(() => {
 const salesSearchTerm = ref('');
 const salesStatusFilter = ref<'all' | SaleOrderStatus>('all');
 const salesChannelFilter = ref<'all' | SaleOrderChannel>('all');
+const salesPaymentFilter = ref<'all' | PaymentStatus>('all');
 const salesPage = ref(1);
 const saleStatusOptions = SALE_STATUS_OPTIONS;
 const saleChannelOptions = CHANNEL_FILTER_OPTIONS;
+const salePaymentOptions = PAYMENT_STATUS_FILTER_OPTIONS;
 const saleTimelineSteps = SALE_TIMELINE_STEPS;
 
 const hasActiveSalesFilters = computed(() => (
-  salesSearchTerm.value.trim() !== '' || salesStatusFilter.value !== 'all' || salesChannelFilter.value !== 'all'
+  salesSearchTerm.value.trim() !== ''
+  || salesStatusFilter.value !== 'all'
+  || salesChannelFilter.value !== 'all'
+  || salesPaymentFilter.value !== 'all'
 ));
 
 // Etapa 0 of the pedidos/NF/envio evolution: the orders list used to always
@@ -82,6 +91,7 @@ function buildSalesFilters(): Omit<SaleOrderFilters, 'pageSize'> {
     search: salesSearchTerm.value.trim() || undefined,
     status: salesStatusFilter.value === 'all' ? undefined : salesStatusFilter.value,
     channel: salesChannelFilter.value === 'all' ? undefined : salesChannelFilter.value,
+    paymentStatus: salesPaymentFilter.value === 'all' ? undefined : salesPaymentFilter.value,
     page: salesPage.value,
   };
 }
@@ -102,7 +112,7 @@ watch(salesSearchTerm, () => {
   emitSalesFiltersDebounced();
 });
 
-watch([salesStatusFilter, salesChannelFilter], () => {
+watch([salesStatusFilter, salesChannelFilter, salesPaymentFilter], () => {
   cancelSalesFiltersDebounce();
   salesPage.value = 1;
   void fetchSalesHistory(buildSalesFilters());
@@ -282,6 +292,36 @@ function handleCancelFromModal(order: SaleOrderDetail): void {
   isDetailModalOpen.value = false;
 }
 
+// Online-sales foundation: an operator payment action from the detail modal.
+// The backend returns the fuller detail shape, so applyUpdatedOrder patches
+// both the list row and the open modal -- no reload.
+async function handleUpdatePayment(
+  order: SaleOrderDetail,
+  target: PaymentStatus,
+): Promise<void> {
+  updatingSaleOrderId.value = order.id;
+  modalUpdateError.value = null;
+
+  try {
+    const updatedOrder = await salesService.updatePayment(order.id, target);
+    applyUpdatedOrder(updatedOrder);
+    success('Pagamento atualizado.');
+  } catch (error: unknown) {
+    Logger.error(
+      'Sale order payment update failed',
+      buildErrorContext(error as ApplicationError, { orderId: order.id, target }),
+    );
+    const message =
+      'Não foi possível atualizar o pagamento. Revise e tente novamente.';
+    modalUpdateError.value = message;
+    // Toast too: the modal's updateError banner only renders alongside the
+    // operational-status actions, which a delivered/paid order no longer has.
+    toastError(message);
+  } finally {
+    updatingSaleOrderId.value = null;
+  }
+}
+
 onMounted(() => {
   void fetchSalesHistory();
 });
@@ -296,7 +336,7 @@ onMounted(() => {
       </div>
     </div>
 
-    <div class="mt-6 grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px] xl:grid-cols-[minmax(0,1fr)_180px_180px]">
+    <div class="mt-6 grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_170px_170px_190px]">
       <label class="relative block">
         <span class="sr-only">Buscar pedido</span>
         <MagnifyingGlassIcon class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-bip-muted" />
@@ -330,6 +370,20 @@ onMounted(() => {
         >
           <option value="all">Todos canais</option>
           <option v-for="option in saleChannelOptions" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
+        </select>
+      </label>
+
+      <label class="block">
+        <span class="sr-only">Filtrar por pagamento</span>
+        <select
+          v-model="salesPaymentFilter"
+          data-cy="sales-payment-filter"
+          class="h-11 w-full appearance-none rounded-lg border border-[#D1D5DB] bg-white px-3 text-sm text-[#05050A] outline-none transition focus:border-[#111827] focus:ring-2 focus:ring-[#F3F4F6]"
+        >
+          <option value="all">Todos pagamentos</option>
+          <option v-for="option in salePaymentOptions" :key="option.value" :value="option.value">
             {{ option.label }}
           </option>
         </select>
@@ -449,12 +503,19 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="mt-4">
+          <div class="mt-4 flex flex-wrap gap-2">
             <span
               class="rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-widest"
               :class="getSaleStatusBadgeClass(sale.status)"
             >
               {{ getSaleStatusLabel(sale.status) }}
+            </span>
+            <span
+              class="rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-widest"
+              :class="getPaymentStatusBadgeClass(sale.payment_status)"
+              data-cy="sale-payment-badge"
+            >
+              {{ getPaymentStatusLabel(sale.payment_status) }}
             </span>
           </div>
         </article>
@@ -511,6 +572,7 @@ onMounted(() => {
       @ship="(shipping) => selectedOrderDetail && handleMarkShipped(selectedOrderDetail, shipping)"
       @deliver="() => selectedOrderDetail && handleMarkDelivered(selectedOrderDetail)"
       @cancel="() => selectedOrderDetail && handleCancelFromModal(selectedOrderDetail)"
+      @payment="({ target }) => selectedOrderDetail && handleUpdatePayment(selectedOrderDetail, target)"
     />
   </div>
 </template>

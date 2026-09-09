@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, toRef, watch } from 'vue';
 import { ChatBubbleLeftRightIcon, TruckIcon, XMarkIcon } from '@heroicons/vue/24/outline';
-import type { SaleOrderDetail } from '@/types/sales';
+import type { PaymentStatus, SaleOrderDetail } from '@/types/sales';
 import {
   getChannelLabel,
   getDeliveryMethodLabel,
+  getPaymentActionLabel,
   getPaymentLabel,
+  getPaymentStatusBadgeClass,
+  getPaymentStatusLabel,
   getSaleStatusLabel,
 } from '@/constants/saleOrder';
 import { formatBRL, formatDateTimeBR } from '@/utils/formatters';
@@ -38,6 +41,9 @@ const emit = defineEmits<{
   ship: [{ carrierName: string; trackingCode: string }];
   deliver: [];
   cancel: [];
+  // Online-sales foundation: record what happened to the payment. `target`
+  // is one of order.available_payment_actions.
+  payment: [{ target: PaymentStatus }];
 }>();
 
 const containerRef = ref<HTMLElement | null>(null);
@@ -81,6 +87,15 @@ const canMarkDelivered = computed(() => (
 const canCancel = computed(() => (
   props.order?.status === 'prepared' || props.order?.status === 'sent'
 ));
+
+// Online-sales foundation: the operator's payment actions come straight
+// from the backend (`available_payment_actions`), so a status that has no
+// legal manual move simply shows no buttons.
+const paymentActions = computed<PaymentStatus[]>(() => props.order?.available_payment_actions ?? []);
+const isRefundPending = computed(
+  () => props.order?.payment_status === 'refund_pending',
+);
+const paymentReference = computed(() => props.order?.payment_reference?.trim() ?? '');
 
 // Etapa 1: "Notificar cliente" reuses the wa.me pattern already used by the
 // public checkout (order.service.ts's buildWhatsAppHandoffUrl), but in the
@@ -176,6 +191,13 @@ function submitShipForm(): void {
                 <span class="rounded-full border border-[#E5E7EB] bg-zinc-50 px-2.5 py-1 text-bip-muted">
                   {{ getSaleStatusLabel(order.status) }}
                 </span>
+                <span
+                  class="rounded-full border px-2.5 py-1"
+                  :class="getPaymentStatusBadgeClass(order.payment_status)"
+                  data-cy="order-detail-payment-badge"
+                >
+                  {{ getPaymentStatusLabel(order.payment_status) }}
+                </span>
                 <span class="rounded-full border border-[#E5E7EB] bg-zinc-50 px-2.5 py-1 text-bip-muted">
                   {{ getChannelLabel(order.channel) }}
                 </span>
@@ -260,9 +282,75 @@ function submitShipForm(): void {
                 <span>Total</span>
                 <span class="font-mono">{{ formatBRL(order.total) }}</span>
               </div>
-              <p class="px-1 text-xs text-bip-muted">
-                Pagamento: {{ getPaymentLabel(order.payment_method) }}
+            </section>
+
+            <section class="space-y-2 border-t border-[#E5E7EB] pt-4" data-cy="order-detail-payment">
+              <h4 class="text-[10px] font-black uppercase tracking-[0.3em] text-bip-muted">Pagamento</h4>
+
+              <div class="flex flex-wrap items-center gap-2 text-sm text-[#05050A]">
+                <span
+                  class="rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-widest"
+                  :class="getPaymentStatusBadgeClass(order.payment_status)"
+                >
+                  {{ getPaymentStatusLabel(order.payment_status) }}
+                </span>
+                <span class="text-bip-muted">{{ getPaymentLabel(order.payment_method) }}</span>
+              </div>
+
+              <p v-if="order.paid_at" class="text-xs text-bip-muted">
+                Pago em {{ formatDateTimeBR(order.paid_at) }}
               </p>
+              <p v-if="order.refunded_at" class="text-xs text-bip-muted">
+                Reembolso confirmado em {{ formatDateTimeBR(order.refunded_at) }}
+              </p>
+              <p v-if="paymentReference" class="text-xs text-bip-muted">
+                Referência: {{ paymentReference }}
+              </p>
+
+              <p
+                v-if="isRefundPending"
+                class="rounded-lg border border-orange-300 bg-orange-50 px-3 py-2 text-xs font-semibold text-orange-800"
+                data-cy="order-detail-refund-warning"
+                role="alert"
+              >
+                Reembolso pendente. O Bip Flow não processa reembolsos — devolva o
+                valor pelo seu meio de pagamento<template v-if="canManage && paymentActions.length > 0">
+                  e confirme abaixo</template>.
+              </p>
+
+              <div
+                v-if="canManage && paymentActions.length > 0"
+                class="flex flex-wrap gap-2 pt-1"
+                data-cy="order-detail-payment-actions"
+              >
+                <button
+                  v-for="target in paymentActions"
+                  :key="target"
+                  type="button"
+                  :data-cy="`payment-action-${target}`"
+                  class="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-xs font-black uppercase tracking-widest text-[#05050A] transition hover:border-[#111827] disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="isUpdating"
+                  @click="emit('payment', { target })"
+                >
+                  {{ isUpdating ? 'Atualizando...' : getPaymentActionLabel(target) }}
+                </button>
+              </div>
+
+              <ul
+                v-if="order.payment_status_events.length > 0"
+                class="mt-1 space-y-1 text-xs text-bip-muted"
+                data-cy="order-detail-payment-history"
+              >
+                <li
+                  v-for="event in order.payment_status_events"
+                  :key="event.id"
+                  class="flex flex-wrap items-baseline gap-x-1.5"
+                >
+                  <span class="text-[#05050A]">{{ getPaymentStatusLabel(event.new_status) }}</span>
+                  <span>· {{ formatDateTimeBR(event.created_at) }}</span>
+                  <span v-if="event.performed_by_username">· {{ event.performed_by_username }}</span>
+                </li>
+              </ul>
             </section>
 
             <a

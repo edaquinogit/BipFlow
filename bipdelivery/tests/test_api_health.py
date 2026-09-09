@@ -2586,8 +2586,11 @@ class CheckoutWhatsAppAPITest(TestCase):
             "/api/v1/checkout/whatsapp/", payload, format="json"
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("delivery_region_id", response.data["customer"])
+        # online-sales foundation: a region that does not resolve for this
+        # store is a commercial rejection with a stable code, not a field
+        # validation error.
+        self.assertEqual(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+        self.assertEqual(response.data["code"], "delivery_region_unavailable")
         self.assertFalse(SaleOrder.objects.exists())
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock_quantity, 8)
@@ -2619,8 +2622,8 @@ class CheckoutWhatsAppAPITest(TestCase):
             "/api/v1/checkout/whatsapp/", payload, format="json"
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("delivery_region_id", response.data["customer"])
+        self.assertEqual(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+        self.assertEqual(response.data["code"], "delivery_region_unavailable")
         self.assertFalse(SaleOrder.objects.exists())
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock_quantity, 8)
