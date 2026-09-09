@@ -16,12 +16,14 @@ from .views import (
     MyStoreDetailView,
     MyStoresView,
     ProductViewSet,
+    PublicStoreCommerceSettingsView,
     PublicStorefrontAppearanceView,
     PublicStorefrontBannerListView,
     PublicStoreSettingsView,
     SaleOrderViewSet,
     StockMovementViewSet,
     StoreAppearanceSettingsView,
+    StoreCommerceSettingsView,
     StorefrontBannerDetailView,
     StorefrontBannerListView,
     StorefrontBannerReorderView,
@@ -60,6 +62,11 @@ urlpatterns = [
         "store/current/merchant-profile/",
         MerchantProfileView.as_view(),
         name="store-current-merchant-profile",
+    ),
+    path(
+        "store/current/commerce-settings/",
+        StoreCommerceSettingsView.as_view(),
+        name="store-current-commerce-settings",
     ),
     path(
         "store/current/appearance/",
@@ -112,6 +119,11 @@ urlpatterns = [
         "public/stores/<slug:slug>/banners/",
         PublicStorefrontBannerListView.as_view(),
         name="public-store-storefront-banners",
+    ),
+    path(
+        "public/stores/<slug:slug>/commerce-settings/",
+        PublicStoreCommerceSettingsView.as_view(),
+        name="public-store-commerce-settings",
     ),
     path(
         "store/mine/<slug:slug>/label-settings/",

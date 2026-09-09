@@ -38,6 +38,7 @@ from rest_framework.views import APIView
 
 from .errors import not_found_error
 from .models import (
+    PaymentStatusEvent,
     Product,
     ProductVariant,
     SaleOrder,
@@ -46,6 +47,7 @@ from .models import (
     Store,
 )
 from .order_reference import build_sale_order_reference
+from .payments import record_initial_payment_event
 from .permissions import has_dashboard_write_access
 from .store_scope import resolve_request_store
 from .throttling import PdvReceiptEmailThrottle
@@ -361,21 +363,37 @@ class PdvSaleView(APIView):
                 validated["items"], store
             )
             rounded_subtotal = subtotal.quantize(Decimal("0.01"))
+            performed_by = (
+                request.user if request.user.is_authenticated else None
+            )
+            now = timezone.now()
 
             sale_order = SaleOrder.objects.create(
                 store=store,
                 order_reference=order_reference,
                 channel=SaleOrder.CHANNEL_LOJA_FISICA,
-                performed_by=request.user if request.user.is_authenticated else None,
+                performed_by=performed_by,
                 customer_name=customer_name,
                 customer_phone=customer_phone,
                 customer_email=customer_email,
                 delivery_method="pickup",
                 payment_method=validated["payment_method"],
+                # A PDV sale is a completed in-person transaction: the money
+                # changed hands at the counter, so it starts already paid
+                # (online-sales foundation). The virtual/WhatsApp channel,
+                # by contrast, starts pending until an operator confirms.
+                payment_status=SaleOrder.PAYMENT_STATUS_PAID,
+                paid_at=now,
                 notes=notes,
                 subtotal=rounded_subtotal,
                 delivery_fee=Decimal("0.00"),
                 total=rounded_subtotal,
+            )
+            record_initial_payment_event(
+                sale_order,
+                source=PaymentStatusEvent.SOURCE_SYSTEM,
+                performed_by=performed_by,
+                note="Venda PDV concluida no balcao",
             )
 
             SaleOrderItem.objects.bulk_create(

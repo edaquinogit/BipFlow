@@ -33,6 +33,7 @@ from .models import (
     DeliveryRegion,
     LabelSettings,
     MerchantProfile,
+    PaymentStatusEvent,
     Product,
     ProductGalleryImage,
     ProductVariant,
@@ -40,6 +41,7 @@ from .models import (
     SaleOrderItem,
     StockMovement,
     Store,
+    StoreCommerceSettings,
     StorefrontBanner,
     StorefrontDestination,
     StorefrontAppearance,
@@ -2093,6 +2095,132 @@ def _as_serializer_validation_error(error: DjangoValidationError) -> None:
     raise serializers.ValidationError(messages or str(error)) from error
 
 
+def _validate_commerce_invariants(instance: StoreCommerceSettings) -> None:
+    """Re-check the three commercial rules on a would-be-saved instance.
+
+    Raises ``serializers.ValidationError`` (HTTP 400) with the same field
+    keys the model's ``clean()`` uses, so an invalid combination is rejected
+    with a friendly message before it can hit the DB CheckConstraints.
+    """
+    errors: dict = {}
+
+    if instance.minimum_order_value is not None and instance.minimum_order_value < 0:
+        errors["minimum_order_value"] = "O pedido minimo nao pode ser negativo."
+
+    if instance.orders_enabled and not instance.enabled_delivery_methods:
+        errors["delivery_enabled"] = (
+            "Com pedidos ativos, habilite ao menos uma modalidade de entrega."
+        )
+
+    if instance.orders_enabled and not instance.enabled_payment_methods:
+        errors["accepts_pix"] = (
+            "Com pedidos ativos, aceite ao menos uma forma de pagamento."
+        )
+
+    if errors:
+        raise serializers.ValidationError(errors)
+
+
+class StoreCommerceSettingsSerializer(serializers.ModelSerializer):
+    """Dashboard read/write of the resolved store's commercial rules
+    (online-sales foundation).
+
+    Explicit field list (never ``__all__``): ``id``/``store`` are never
+    exposed, so a client can neither read the tenant linkage nor try to
+    reassign it -- the view owns the instance, resolved from the
+    authenticated store context. PATCH is partial. The three invariants
+    (non-negative minimum, an open store needs a delivery mode and a payment
+    method) are validated here against the merged instance and also enforced
+    as DB CheckConstraints.
+    """
+
+    enabled_delivery_methods = serializers.ListField(
+        child=serializers.CharField(), read_only=True
+    )
+    enabled_payment_methods = serializers.ListField(
+        child=serializers.CharField(), read_only=True
+    )
+
+    class Meta:
+        model = StoreCommerceSettings
+        fields = [
+            "orders_enabled",
+            "delivery_enabled",
+            "pickup_enabled",
+            "minimum_order_value",
+            "accepts_pix",
+            "accepts_card",
+            "accepts_cash",
+            "enabled_delivery_methods",
+            "enabled_payment_methods",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["created_at", "updated_at"]
+
+    def validate_minimum_order_value(self, value: Decimal) -> Decimal:
+        """Reject a negative minimum with a field error (mirrors the CheckConstraint)."""
+        if value is not None and value < 0:
+            raise serializers.ValidationError("O pedido minimo nao pode ser negativo.")
+        return value
+
+    def validate(self, attrs: dict) -> dict:
+        """Enforce the open-store invariants on the merged (current + patch) instance."""
+        merged = StoreCommerceSettings(
+            store_id=self.instance.store_id if self.instance else None
+        )
+        for field in (
+            "orders_enabled",
+            "delivery_enabled",
+            "pickup_enabled",
+            "minimum_order_value",
+            "accepts_pix",
+            "accepts_card",
+            "accepts_cash",
+        ):
+            current = getattr(self.instance, field, None)
+            setattr(merged, field, attrs.get(field, current))
+
+        _validate_commerce_invariants(merged)
+        return attrs
+
+
+class PublicStoreCommerceSettingsSerializer(serializers.ModelSerializer):
+    """Storefront-safe projection of a store's commercial rules.
+
+    Only what the cart needs to render valid options and the closed-store
+    state: whether orders are on, which delivery modes and payment methods
+    are allowed, and the minimum order value. No timestamps, ids, or the
+    tenant linkage.
+    """
+
+    delivery_methods = serializers.SerializerMethodField()
+    payment_methods = serializers.SerializerMethodField()
+
+    class Meta:
+        model = StoreCommerceSettings
+        fields = [
+            "orders_enabled",
+            "delivery_enabled",
+            "pickup_enabled",
+            "minimum_order_value",
+            "accepts_pix",
+            "accepts_card",
+            "accepts_cash",
+            "delivery_methods",
+            "payment_methods",
+        ]
+        read_only_fields = fields
+
+    def get_delivery_methods(self, instance: StoreCommerceSettings) -> list[str]:
+        """Delivery-method codes the storefront may offer right now."""
+        return instance.enabled_delivery_methods
+
+    def get_payment_methods(self, instance: StoreCommerceSettings) -> list[str]:
+        """Payment-method codes the storefront may offer right now."""
+        return instance.enabled_payment_methods
+
+
 class MerchantProfileSerializer(serializers.ModelSerializer):
     """Read/write the resolved store's commercial identity, contact, address
     and social links (COMMERCE P1).
@@ -2569,6 +2697,26 @@ class SaleOrderItemSerializer(serializers.ModelSerializer):
         ]
 
 
+class PaymentStatusEventSerializer(serializers.ModelSerializer):
+    """One append-only payment-status transition, for the order detail view."""
+
+    performed_by_username = serializers.ReadOnlyField(source="performed_by.username")
+
+    class Meta:
+        model = PaymentStatusEvent
+        fields = [
+            "id",
+            "previous_status",
+            "new_status",
+            "source",
+            "performed_by_username",
+            "reference",
+            "note",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
 class SaleOrderSerializer(serializers.ModelSerializer):
     """Read-only sale order payload for the dashboard menu and history screens."""
 
@@ -2588,6 +2736,8 @@ class SaleOrderSerializer(serializers.ModelSerializer):
             "customer_email",
             "delivery_method",
             "payment_method",
+            "payment_status",
+            "paid_at",
             "subtotal",
             "delivery_fee",
             "delivery_region_name",
@@ -2612,6 +2762,9 @@ class SaleOrderDetailSerializer(SaleOrderSerializer):
     every row with fields only the detail screen needs.
     """
 
+    payment_status_events = PaymentStatusEventSerializer(many=True, read_only=True)
+    available_payment_actions = serializers.SerializerMethodField()
+
     class Meta(SaleOrderSerializer.Meta):
         fields = SaleOrderSerializer.Meta.fields + [
             "address",
@@ -2625,7 +2778,37 @@ class SaleOrderDetailSerializer(SaleOrderSerializer):
             "tracking_url",
             "shipped_at",
             "delivered_at",
+            "refunded_at",
+            "payment_reference",
+            "payment_status_events",
+            "available_payment_actions",
         ]
+
+    def get_available_payment_actions(self, order: SaleOrder) -> list[str]:
+        """Payment statuses an operator may move this order to right now."""
+        from .payments import available_manual_targets
+
+        return available_manual_targets(order)
+
+
+class SaleOrderPaymentUpdateSerializer(serializers.Serializer):
+    """Validate an operator payment action on a sale order (online-sales foundation).
+
+    ``payment_status`` is the target state -- allowed values depend on the
+    order's current state and are re-checked in the view / state machine.
+    ``reference`` and ``note`` are optional operator annotations; never
+    payment-instrument data.
+    """
+
+    payment_status = serializers.ChoiceField(
+        choices=[choice[0] for choice in SaleOrder.PAYMENT_STATUS_CHOICES],
+    )
+    reference = serializers.CharField(
+        required=False, allow_blank=True, max_length=64, trim_whitespace=True, default=""
+    )
+    note = serializers.CharField(
+        required=False, allow_blank=True, max_length=200, trim_whitespace=True, default=""
+    )
 
 
 class SaleOrderStatusUpdateSerializer(serializers.Serializer):
@@ -2649,7 +2832,14 @@ class SaleOrderStatusUpdateSerializer(serializers.Serializer):
 
 
 class SaleOrderSummarySerializer(serializers.Serializer):
-    """Aggregated real sales revenue for the dashboard's revenue card."""
+    """Aggregated sales for the dashboard's revenue card.
+
+    ``revenue_total`` / ``orders_count`` keep their historical meaning --
+    the volume of non-cancelled orders in the period, whatever their payment
+    state -- for contract compatibility. The ``paid_*`` / ``pending_*`` /
+    ``refund_pending_*`` fields (online-sales foundation) are what separate
+    money actually received from orders merely created.
+    """
 
     period = serializers.CharField()
     revenue_total = serializers.DecimalField(
@@ -2665,6 +2855,18 @@ class SaleOrderSummarySerializer(serializers.Serializer):
     comparison_same_period_last_year = serializers.DecimalField(
         max_digits=6, decimal_places=2, allow_null=True
     )
+    paid_revenue_total = serializers.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+    paid_orders_count = serializers.IntegerField()
+    pending_payment_total = serializers.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+    pending_payment_count = serializers.IntegerField()
+    refund_pending_total = serializers.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+    refund_pending_count = serializers.IntegerField()
 
 
 class SaleOrderTimeseriesPointSerializer(serializers.Serializer):
@@ -2690,13 +2892,21 @@ class TopProductBreakdownSerializer(serializers.Serializer):
 
 
 class PaymentMethodBreakdownSerializer(serializers.Serializer):
-    """Revenue share for a single payment method within the period."""
+    """Revenue share for a single payment method within the period.
+
+    ``revenue_total`` / ``orders_count`` stay as order volume (contract
+    compatibility); ``paid_revenue_total`` is the confirmed-money slice
+    (online-sales foundation).
+    """
 
     payment_method = serializers.CharField()
     revenue_total = serializers.DecimalField(
         max_digits=12, decimal_places=2, default=Decimal("0.00")
     )
     orders_count = serializers.IntegerField()
+    paid_revenue_total = serializers.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
 
 
 class StatusBreakdownSerializer(serializers.Serializer):

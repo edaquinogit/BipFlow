@@ -7,7 +7,14 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
 
-from bipdelivery.api.models import Category, DeliveryRegion, Product, Store, StoreSettings
+from bipdelivery.api.models import (
+    Category,
+    DeliveryRegion,
+    Product,
+    Store,
+    StoreCommerceSettings,
+    StoreSettings,
+)
 from bipdelivery.api.permissions import DASHBOARD_READ_ROLES, DASHBOARD_WRITE_ROLES
 
 
@@ -68,6 +75,7 @@ class Command(BaseCommand):
             self._check_store_whatsapp(),
             self._check_catalog(),
             self._check_delivery_regions(),
+            self._check_commerce_settings(),
         ]
 
     @staticmethod
@@ -282,6 +290,26 @@ class Command(BaseCommand):
             "Each active store has categories and sellable products.",
         )
 
+    @staticmethod
+    def _commerce_settings_by_store(active_store_ids: list[int]) -> dict:
+        """Return {store_id: effective StoreCommerceSettings} for the active stores.
+
+        A store with no row yet is represented by an unsaved instance carrying
+        the model defaults (behaviour-preserving: orders on, every method
+        enabled) -- the same thing get_for_store() would materialise. This is
+        a read-only check, so it never writes the row.
+        """
+        rows = {
+            row.store_id: row
+            for row in StoreCommerceSettings.objects.filter(
+                store_id__in=active_store_ids
+            )
+        }
+        return {
+            store_id: rows.get(store_id) or StoreCommerceSettings(store_id=store_id)
+            for store_id in active_store_ids
+        }
+
     def _check_delivery_regions(self) -> ReadinessCheck:
         active_stores = self._active_stores()
         active_store_ids = [store.id for store in active_stores]
@@ -293,26 +321,94 @@ class Command(BaseCommand):
                 "No active store is available for delivery checks.",
             )
 
+        # A store that only does pickup (commerce delivery_enabled=False) does
+        # not need a delivery region -- only require one where delivery is on
+        # (online-sales foundation).
+        commerce_by_store = self._commerce_settings_by_store(active_store_ids)
+
+        def _requires_delivery_region(store: Store) -> bool:
+            cfg = commerce_by_store[store.id]
+            return cfg.orders_enabled and cfg.delivery_enabled
+
+        relevant_stores = [
+            store for store in active_stores if _requires_delivery_region(store)
+        ]
+        if not relevant_stores:
+            return ReadinessCheck(
+                "delivery",
+                True,
+                "No active store currently offers delivery; no region required.",
+            )
+
         stores_with_region = set(
             DeliveryRegion.objects.filter(
-                store_id__in=active_store_ids,
+                store_id__in=[store.id for store in relevant_stores],
                 is_active=True,
             ).values_list("store_id", flat=True)
         )
         missing_region = [
-            store for store in active_stores if store.id not in stores_with_region
+            store for store in relevant_stores if store.id not in stores_with_region
         ]
 
         if not missing_region:
             return ReadinessCheck(
                 "delivery",
                 True,
-                "Each active store has at least one active delivery region.",
+                "Each delivery-enabled store has at least one active delivery region.",
             )
 
         return ReadinessCheck(
             "delivery",
             False,
-            "Create at least one active delivery region for active stores: "
+            "Create at least one active delivery region for delivery-enabled stores: "
             f"{self._store_labels(missing_region)}.",
+        )
+
+    def _check_commerce_settings(self) -> ReadinessCheck:
+        active_stores = self._active_stores()
+        active_store_ids = [store.id for store in active_stores]
+
+        if not active_stores:
+            return ReadinessCheck(
+                "commerce",
+                False,
+                "No active store is available for commercial-config checks.",
+            )
+
+        commerce_by_store = self._commerce_settings_by_store(active_store_ids)
+        hard_problems: list[str] = []
+        soft_problems: list[str] = []
+
+        for store in active_stores:
+            label = f"{store.name} ({store.slug})"
+            cfg = commerce_by_store[store.id]
+
+            if cfg.minimum_order_value is not None and cfg.minimum_order_value < 0:
+                hard_problems.append(f"{label}: pedido minimo negativo")
+            if cfg.orders_enabled and not cfg.enabled_delivery_methods:
+                hard_problems.append(f"{label}: nenhuma modalidade de entrega")
+            if cfg.orders_enabled and not cfg.enabled_payment_methods:
+                hard_problems.append(f"{label}: nenhuma forma de pagamento")
+            if not cfg.orders_enabled:
+                soft_problems.append(f"{label}: pedidos desativados")
+
+        if hard_problems:
+            return ReadinessCheck(
+                "commerce",
+                False,
+                "Commercial-config blockers: " + "; ".join(hard_problems[:5]),
+            )
+
+        if soft_problems:
+            return ReadinessCheck(
+                "commerce",
+                False,
+                "Stores not accepting orders: " + "; ".join(soft_problems[:5]),
+                warning=True,
+            )
+
+        return ReadinessCheck(
+            "commerce",
+            True,
+            "Each active store has a valid commercial config accepting orders.",
         )

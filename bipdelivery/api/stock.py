@@ -16,6 +16,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from .models import Product, ProductVariant, SaleOrder, StockMovement, Store
+from .payments import settle_payment_for_cancelled_order
 
 
 class StockMovementError(Exception):
@@ -166,15 +167,42 @@ def apply_order_cancellation(
     differently here.
 
     Idempotent: cancelling an already-cancelled order is a no-op (returns an
-    empty list) instead of restocking twice. Locks every affected product row
+    empty list) instead of restocking twice. The order row is re-read under
+    ``select_for_update`` at the top of the transaction and the "already
+    cancelled" check repeated there, so two concurrent cancel requests can
+    never both restock (the loser serialises on the lock, then sees
+    ``STATUS_CANCELLED`` and bails). Locks every affected product row
     (ordered by id, same deadlock-free pattern as
     CheckoutWhatsAppView._lock_cart_products and PdvSaleView._lock_products)
     before mutating any of them.
+
+    Everything past the lock reads the *locked* row, never the instance the
+    caller passed in: a concurrent payment confirmation can move
+    ``payment_status`` between the caller's read and this lock, and the
+    financial settlement must branch on the committed value (a stale
+    ``pending`` seen while the row is really ``paid`` would drive the
+    settlement into an invalid ``paid -> cancelled`` transition). The caller's
+    instance is refreshed from the database before returning so callers that
+    serialise it straight after still see the committed state.
     """
     if order.status == SaleOrder.STATUS_CANCELLED:
         return []
 
+    caller_order = order
+
     with transaction.atomic():
+        # Serialise concurrent cancels on the order row before touching any
+        # stock: without this, two near-simultaneous requests both pass the
+        # pre-transaction check above and each restock the same items once
+        # (and the payment settlement would run twice). Lock order first,
+        # then products -- no other path locks products then this order.
+        # From here on `order` IS the locked row -- the only source of truth
+        # for the order's status/payment_status/channel/tenant.
+        order = SaleOrder.objects.select_for_update().get(pk=order.pk)
+        if order.status == SaleOrder.STATUS_CANCELLED:
+            caller_order.refresh_from_db()
+            return []
+
         items = list(order.items.all())
         product_ids = sorted({item.product_id for item in items if item.product_id})
         variant_ids = sorted({item.variant_id for item in items if item.variant_id})
@@ -259,4 +287,18 @@ def apply_order_cancellation(
         order.status = SaleOrder.STATUS_CANCELLED
         order.save(update_fields=["status", "updated_at"])
 
+        # Settle the payment side in the same transaction: a pending/failed
+        # payment becomes `cancelled`, a paid one opens a `refund_pending`
+        # (online-sales foundation). Branches on the locked row's current
+        # payment_status, so a payment confirmed concurrently is handled as
+        # `paid -> refund_pending`, not mis-driven into an invalid transition.
+        # Never marks a real refund as done.
+        settle_payment_for_cancelled_order(
+            order, performed_by=performed_by, now=timestamp
+        )
+
+    # Reflect the committed cancellation (status + settled payment fields) on
+    # the instance the caller handed us -- it may have come in stale and is
+    # typically serialised straight after this call returns.
+    caller_order.refresh_from_db()
     return movements

@@ -14,11 +14,13 @@ from .models import (
     LoginAttempt,
     MerchantProfile,
     MFABackupCode,
+    PaymentStatusEvent,
     Product,
     ProductVariant,
     SaleOrder,
     SaleOrderItem,
     Store,
+    StoreCommerceSettings,
     StorefrontAppearance,
     StorefrontBanner,
     StoreMembership,
@@ -205,6 +207,36 @@ class MerchantProfileAdmin(StoreScopedAdminMixin, admin.ModelAdmin):
     readonly_fields = ("created_at", "updated_at")
 
 
+@admin.register(StoreCommerceSettings)
+class StoreCommerceSettingsAdmin(StoreScopedAdminMixin, admin.ModelAdmin):
+    """Per-store commercial rules (online-sales foundation).
+
+    The admin ModelForm runs Model.clean(), so the three commercial
+    invariants (non-negative minimum, an open store needs a delivery mode
+    and a payment method) are enforced here too, not just in the API.
+    """
+
+    list_display = (
+        "id",
+        "store",
+        "orders_enabled",
+        "delivery_enabled",
+        "pickup_enabled",
+        "minimum_order_value",
+        "updated_at",
+    )
+    list_filter = (
+        "orders_enabled",
+        "delivery_enabled",
+        "pickup_enabled",
+        "accepts_pix",
+        "accepts_card",
+        "accepts_cash",
+    )
+    search_fields = ("store__name", "store__slug")
+    readonly_fields = ("created_at", "updated_at")
+
+
 @admin.register(StorefrontAppearance)
 class StorefrontAppearanceAdmin(StoreScopedAdminMixin, admin.ModelAdmin):
     list_display = (
@@ -375,6 +407,26 @@ class SaleOrderItemInline(admin.TabularInline):
     can_delete = False
 
 
+class PaymentStatusEventInline(admin.TabularInline):
+    """Append-only payment audit trail for a sale order (online-sales foundation)."""
+
+    model = PaymentStatusEvent
+    extra = 0
+    readonly_fields = (
+        "previous_status",
+        "new_status",
+        "source",
+        "performed_by",
+        "reference",
+        "note",
+        "created_at",
+    )
+    can_delete = False
+
+    def has_add_permission(self, request, obj=None) -> bool:
+        return False
+
+
 @admin.register(SaleOrder)
 class SaleOrderAdmin(StoreScopedAdminMixin, admin.ModelAdmin):
     list_display = (
@@ -383,14 +435,71 @@ class SaleOrderAdmin(StoreScopedAdminMixin, admin.ModelAdmin):
         "customer_name",
         "total",
         "status",
+        "payment_status",
         "created_at",
     )
-    list_filter = ("store", "status", "delivery_method", "payment_method", "created_at")
+    list_filter = (
+        "store",
+        "status",
+        "payment_status",
+        "delivery_method",
+        "payment_method",
+        "created_at",
+    )
     search_fields = (
         "order_reference",
         "customer_name",
         "customer_phone",
         "items__product_name",
     )
-    readonly_fields = ("order_reference", "created_at", "updated_at")
-    inlines = [SaleOrderItemInline]
+    readonly_fields = (
+        "order_reference",
+        "payment_status",
+        "paid_at",
+        "refunded_at",
+        "created_at",
+        "updated_at",
+    )
+    inlines = [SaleOrderItemInline, PaymentStatusEventInline]
+
+
+@admin.register(PaymentStatusEvent)
+class PaymentStatusEventAdmin(StoreScopedAdminMixin, admin.ModelAdmin):
+    """Read-only view of the payment audit ledger (online-sales foundation).
+
+    Truly append-only: no add, no change, no delete -- a financial audit
+    trail must not be editable or prunable from the admin.
+    """
+
+    list_display = (
+        "id",
+        "store",
+        "order",
+        "previous_status",
+        "new_status",
+        "source",
+        "performed_by",
+        "created_at",
+    )
+    list_filter = ("store", "source", "new_status", "created_at")
+    search_fields = ("order__order_reference", "reference", "note")
+    readonly_fields = (
+        "store",
+        "order",
+        "previous_status",
+        "new_status",
+        "source",
+        "performed_by",
+        "reference",
+        "note",
+        "created_at",
+    )
+
+    def has_add_permission(self, request) -> bool:
+        return False
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        return False
+
+    def has_delete_permission(self, request, obj=None) -> bool:
+        return False
