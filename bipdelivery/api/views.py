@@ -4246,10 +4246,10 @@ class PasswordResetRequestView(APIView):
             .first()
         )
 
-        # Always return the same public response to avoid account enumeration.
+        # Always return the same public response to avoid account enumeration --
+        # and deliberately do NOT echo the submitted email back in the body.
         public_response = {
             "message": "Se este email existir, enviaremos um link seguro para redefinir a senha.",
-            "email": email,
         }
 
         if user is not None:
@@ -4259,17 +4259,29 @@ class PasswordResetRequestView(APIView):
                 f'?uid={reset_payload["uid"]}&token={reset_payload["token"]}'
             )
 
-            send_mail(
-                subject="Recuperacao de senha BipFlow",
-                message=(
-                    "Recebemos uma solicitacao para redefinir sua senha.\n\n"
-                    f"Acesse o link seguro abaixo para criar uma nova senha:\n{reset_url}\n\n"
-                    "Se voce nao solicitou esta alteracao, ignore esta mensagem."
-                ),
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=False,
-            )
+            try:
+                send_mail(
+                    subject="Recuperacao de senha BipFlow",
+                    message=(
+                        "Recebemos uma solicitacao para redefinir sua senha.\n\n"
+                        f"Acesse o link seguro abaixo para criar uma nova senha:\n{reset_url}\n\n"
+                        "Se voce nao solicitou esta alteracao, ignore esta mensagem."
+                    ),
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[user.email],
+                    fail_silently=False,
+                )
+            except Exception as exc:  # noqa: BLE001 -- any SMTP/config failure
+                # A broken mailer must not (a) surface a 500 to the caller or
+                # (b) become an enumeration oracle by 500-ing only for real
+                # accounts while unknown emails keep getting 200. Log a
+                # sanitized event -- exception *type* only, never the address,
+                # the reset token or the SMTP error body (which can echo the
+                # recipient) -- and fall through to the shared 200.
+                logger.error(
+                    "password_reset.email_delivery_failed error_type=%s",
+                    type(exc).__name__,
+                )
 
         return Response(public_response, status=status.HTTP_200_OK)
 
