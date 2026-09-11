@@ -16,9 +16,13 @@ function buildScannerMock(overrides: Partial<ReturnType<typeof usePdvCameraScann
     cameras: ref([]),
     activeCameraId: ref(null),
     hasMultipleCameras: computed(() => false),
+    hasTorch: ref(false),
+    isTorchOn: ref(false),
+    slowHint: ref(false),
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn(),
     switchCamera: vi.fn().mockResolvedValue(undefined),
+    toggleTorch: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   } as unknown as ReturnType<typeof usePdvCameraScanner>
 }
@@ -114,5 +118,44 @@ describe('PdvCameraScannerModal (Etapa C2 of the PDV camera-scanner evolution)',
     const wrapper = mountModal()
 
     expect(wrapper.find('[data-cy="pdv-camera-switch"]').exists()).toBe(false)
+  })
+
+  it('shows a torch button only when the device reports a flash, and toggles it', async () => {
+    const withoutTorch = mountModal()
+    expect(withoutTorch.find('[data-cy="pdv-camera-torch"]').exists()).toBe(false)
+
+    const scanner = buildScannerMock({ hasTorch: ref(true) as any })
+    vi.mocked(usePdvCameraScanner).mockReturnValue(scanner)
+    const withTorch = mountModal()
+
+    const button = withTorch.find('[data-cy="pdv-camera-torch"]')
+    expect(button.exists()).toBe(true)
+    await button.trigger('click')
+    expect(scanner.toggleTorch).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the slow-read hint only when the composable raises it and there is no error', () => {
+    vi.mocked(usePdvCameraScanner).mockReturnValue(
+      buildScannerMock({ slowHint: ref(true) as any })
+    )
+
+    const wrapper = mountModal()
+
+    expect(wrapper.find('[data-cy="pdv-camera-slow-hint"]').exists()).toBe(true)
+    expect(wrapper.find('[data-cy="pdv-camera-slow-hint"]').text()).toContain('busca por nome')
+  })
+
+  it('hides the slow-read hint while an error is shown', () => {
+    vi.mocked(usePdvCameraScanner).mockReturnValue(
+      buildScannerMock({
+        slowHint: ref(true) as any,
+        error: ref({ reason: 'unknown', message: 'Falhou.' }) as any,
+      })
+    )
+
+    const wrapper = mountModal()
+
+    expect(wrapper.find('[data-cy="pdv-camera-slow-hint"]').exists()).toBe(false)
+    expect(wrapper.find('[data-cy="pdv-camera-error"]').exists()).toBe(true)
   })
 })

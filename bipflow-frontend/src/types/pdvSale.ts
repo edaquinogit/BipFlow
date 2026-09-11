@@ -28,6 +28,11 @@ export interface PdvSaleRequestPayload {
   // printed receipt right after the sale finalizes.
   customer_email?: string
   notes?: string
+  // PDV/QR/payment evolution: one opaque value per running cart, reused on
+  // every retry. A double-tapped "Finalizar venda", a held Enter or a
+  // network-retried request under the same key returns the original sale
+  // instead of ringing it up again (bipdelivery/api/pdv.py).
+  idempotency_key?: string
 }
 
 export const PdvSaleItemResponseSchema = z.object({
