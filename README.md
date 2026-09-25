@@ -1,5 +1,10 @@
 # Bip Flow
 
+**[Acessar o Bip Flow / Open app](https://bipflow.pages.dev/login)**
+
+Página de login da aplicação. O painel administrativo exige uma conta com
+as permissões correspondentes.
+
 Plataforma SaaS full-stack multi-tenant para pequenos negócios que precisam
 controlar catálogo, estoque, frete, pedidos, PDV, vitrine digital e checkout
 via WhatsApp sem depender de planilhas ou mensagens soltas. O fluxo principal
@@ -36,6 +41,8 @@ misturam.
 
 Este projeto também possui material de apresentação fora do repositório:
 
+- **Aplicação online:** [acessar o Bip Flow](https://bipflow.pages.dev/login)
+  (página de login; o painel administrativo requer uma conta autorizada).
 - **Vídeo completo no LinkedIn:** [demonstração explicada do fluxo do produto](https://www.linkedin.com/posts/ednaldo-aquino-backend_opentowork-vagasti-desenvolvedor-ugcPost-7455073194668888064-kCBE).
 - **Carrossel técnico no LinkedIn:** [9 slides explicando arquitetura, stack e
   decisões de engenharia](https://www.linkedin.com/posts/ednaldo-aquino-backend_estagio-opentowork-desenvolvedor-ugcPost-7454498028276760578-zi7X).
