@@ -25,11 +25,16 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
+import json
+import logging
+import re
+import time
 from decimal import Decimal
 
 from django.conf import settings
 from django.core.mail import EmailMessage
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
@@ -52,7 +57,16 @@ from .permissions import has_dashboard_write_access
 from .store_scope import resolve_request_store
 from .throttling import PdvReceiptEmailThrottle
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_PDV_CUSTOMER_NAME = "Cliente balcão"
+
+# Same character budget as the public checkout's idempotency key
+# (CheckoutRequestSerializer.validate_idempotency_key): 8-128 chars of an
+# opaque, URL-safe alphabet. The dashboard sends one fresh value per running
+# cart, so a double-tapped "Finalizar venda", a retried request after a
+# network blip, or a held-down Enter can never ring the same cart up twice.
+IDEMPOTENCY_KEY_PATTERN = re.compile(r"[A-Za-z0-9:_-]{8,128}")
 
 # PDV receipt PDF/email evolution: the PDF itself is built client-side (no
 # server-side PDF library exists in this project, see utils/receiptPdf.ts)
@@ -101,12 +115,31 @@ class PdvSaleRequestSerializer(serializers.Serializer):
     notes = serializers.CharField(
         required=False, allow_blank=True, max_length=1000, default=""
     )
+    # Optional. When absent the endpoint behaves exactly as before; when
+    # present, a repeat of the same cart under the same key returns the
+    # original sale instead of ringing it up again (see PdvSaleView.post).
+    idempotency_key = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=128,
+        trim_whitespace=True,
+    )
 
     def validate_items(self, value):
         """Ensure the cart has at least one item."""
         if not value:
             raise serializers.ValidationError(
                 "Informe ao menos um item para registrar a venda."
+            )
+        return value
+
+    def validate_idempotency_key(self, value: str) -> str:
+        if not value:
+            return ""
+        if not IDEMPOTENCY_KEY_PATTERN.fullmatch(value):
+            raise serializers.ValidationError(
+                "A chave de idempotencia deve ter 8 a 128 caracteres seguros."
             )
         return value
 
@@ -138,6 +171,77 @@ class PdvSaleResponseSerializer(serializers.Serializer):
     # Receipt PDF/email evolution: lets the just-finalized receipt modal
     # pre-fill the "send by email" field without a fresh lookup.
     customer_email = serializers.CharField()
+
+
+def build_pdv_idempotency_payload_hash(
+    *, store: Store, validated: dict, performed_by_id: int | None
+) -> str:
+    """Canonical fingerprint of a PDV sale request.
+
+    Two requests carrying the same idempotency key but a different cart (or
+    a different cashier, or a different payment method) are a genuine
+    conflict, not a retry -- this hash is what lets ``post()`` tell a safe
+    replay apart from a key collision.
+    """
+    canonical = {
+        "store_id": store.id,
+        "performed_by_id": performed_by_id,
+        "payment_method": validated["payment_method"],
+        "items": sorted(
+            [
+                item["public_code"].strip().upper(),
+                item.get("variant_id"),
+                int(item["quantity"]),
+            ]
+            for item in validated["items"]
+        ),
+    }
+    encoded = json.dumps(
+        canonical, sort_keys=True, separators=(",", ":"), default=str
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def find_pdv_idempotent_order(
+    *, store: Store, idempotency_key: str
+) -> SaleOrder | None:
+    """The existing PDV sale for this store + key, if one was already rung up."""
+    if not idempotency_key:
+        return None
+    return (
+        SaleOrder.objects.filter(store=store, idempotency_key=idempotency_key)
+        .prefetch_related("items", "items__product")
+        .first()
+    )
+
+
+def serialize_persisted_pdv_sale(sale_order: SaleOrder) -> dict:
+    """Rebuild ``PdvSaleResponseSerializer``'s input from a stored SaleOrder,
+    so an idempotent replay returns the same body the original create did."""
+    items = [
+        {
+            "product_id": item.product_id,
+            "variant_id": item.variant_id,
+            "product_name": item.product_name,
+            "variant_name": item.variant_name or "",
+            "variant_color_hex": item.variant_color_hex or "",
+            "variant_image_url": item.variant_image_url or "",
+            "public_code": item.product.public_code if item.product_id else "",
+            "quantity": item.quantity,
+            "unit_price": item.unit_price,
+            "line_total": item.line_total,
+        }
+        for item in sale_order.items.all()
+    ]
+    return {
+        "order_reference": sale_order.order_reference,
+        "items": items,
+        "subtotal": sale_order.subtotal,
+        "total": sale_order.total,
+        "payment_method": sale_order.payment_method,
+        "created_at": sale_order.created_at,
+        "customer_email": sale_order.customer_email or "",
+    }
 
 
 class PdvSaleView(APIView):
@@ -339,6 +443,8 @@ class PdvSaleView(APIView):
         return normalized_items, subtotal, products_by_code
 
     def post(self, request, *args, **kwargs):
+        started_at = time.monotonic()
+
         if not has_dashboard_write_access(request.user):
             self.permission_denied(
                 request,
@@ -350,6 +456,87 @@ class PdvSaleView(APIView):
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
 
+        payment_method = validated["payment_method"]
+        performed_by = request.user if request.user.is_authenticated else None
+        performed_by_id = performed_by.id if performed_by is not None else None
+        idempotency_key = validated.get("idempotency_key", "").strip()
+
+        # Structured + sanitised: store, cart size, method and outcome only --
+        # never a scanned code, customer name/phone/email, note or the raw
+        # idempotency key. Enough to trace a duplicate or a slow finalize,
+        # nothing a data-subject could be identified from.
+        log_base = {
+            "store_id": store.id,
+            "item_count": len(validated["items"]),
+            "payment_method": payment_method,
+            "has_idempotency_key": bool(idempotency_key),
+        }
+        logger.info(
+            "pdv.sale.finalize_started",
+            extra={**log_base, "event": "pdv.sale.finalize_started"},
+        )
+
+        # A PDV sale does NOT read StoreCommerceSettings.accepts_pix/card/cash:
+        # those flags are the *online storefront's* payment configuration
+        # (their model docstring, the "Vendas online" tab, the go-live check
+        # and the public projection all scope them to the vitrine). The
+        # counter has always accepted pix/card/cash unconditionally and must
+        # keep doing so -- a merchant disabling "cartao" for their online
+        # checkout must not have their physical card machine refused. A
+        # counter-specific payment config would be a separate product feature.
+
+        idempotency_payload_hash = ""
+        if idempotency_key:
+            idempotency_payload_hash = build_pdv_idempotency_payload_hash(
+                store=store,
+                validated=validated,
+                performed_by_id=performed_by_id,
+            )
+            existing = find_pdv_idempotent_order(
+                store=store, idempotency_key=idempotency_key
+            )
+            if existing is not None:
+                # The per-store unique constraint on `idempotency_key` is
+                # shared with the online checkout (it is not channel-scoped),
+                # so `existing` could be a virtual/WhatsApp order that happens
+                # to hold this key. Either that, or a real payload mismatch,
+                # is a genuine conflict -- never a safe PDV replay.
+                is_pdv_replay = (
+                    existing.channel == SaleOrder.CHANNEL_LOJA_FISICA
+                    and existing.idempotency_payload_hash == idempotency_payload_hash
+                )
+                if not is_pdv_replay:
+                    logger.warning(
+                        "pdv.sale.idempotency_conflict",
+                        extra={
+                            **log_base,
+                            "event": "pdv.sale.idempotency_conflict",
+                            "order_reference": existing.order_reference,
+                            "existing_channel": existing.channel,
+                        },
+                    )
+                    return Response(
+                        {
+                            "code": "idempotency_key_conflict",
+                            "detail": "Esta chave de venda ja foi usada com outro carrinho.",
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                logger.info(
+                    "pdv.sale.finalize_replayed",
+                    extra={
+                        **log_base,
+                        "event": "pdv.sale.finalize_replayed",
+                        "order_reference": existing.order_reference,
+                    },
+                )
+                return Response(
+                    PdvSaleResponseSerializer(
+                        serialize_persisted_pdv_sale(existing)
+                    ).data,
+                    status=status.HTTP_201_CREATED,
+                )
+
         order_reference = build_sale_order_reference("PDV")
         customer_name = (
             validated.get("customer_name", "").strip() or DEFAULT_PDV_CUSTOMER_NAME
@@ -358,100 +545,157 @@ class PdvSaleView(APIView):
         customer_email = validated.get("customer_email", "").strip()
         notes = validated.get("notes", "").strip()
 
-        with transaction.atomic():
-            normalized_items, subtotal, products_by_code = self._reserve_stock(
-                validated["items"], store
-            )
-            rounded_subtotal = subtotal.quantize(Decimal("0.01"))
-            performed_by = (
-                request.user if request.user.is_authenticated else None
-            )
-            now = timezone.now()
+        try:
+            with transaction.atomic():
+                normalized_items, subtotal, products_by_code = self._reserve_stock(
+                    validated["items"], store
+                )
+                rounded_subtotal = subtotal.quantize(Decimal("0.01"))
+                now = timezone.now()
 
-            sale_order = SaleOrder.objects.create(
-                store=store,
-                order_reference=order_reference,
-                channel=SaleOrder.CHANNEL_LOJA_FISICA,
-                performed_by=performed_by,
-                customer_name=customer_name,
-                customer_phone=customer_phone,
-                customer_email=customer_email,
-                delivery_method="pickup",
-                payment_method=validated["payment_method"],
-                # A PDV sale is a completed in-person transaction: the money
-                # changed hands at the counter, so it starts already paid
-                # (online-sales foundation). The virtual/WhatsApp channel,
-                # by contrast, starts pending until an operator confirms.
-                payment_status=SaleOrder.PAYMENT_STATUS_PAID,
-                paid_at=now,
-                notes=notes,
-                subtotal=rounded_subtotal,
-                delivery_fee=Decimal("0.00"),
-                total=rounded_subtotal,
-            )
-            record_initial_payment_event(
-                sale_order,
-                source=PaymentStatusEvent.SOURCE_SYSTEM,
-                performed_by=performed_by,
-                note="Venda PDV concluida no balcao",
-            )
+                sale_order = SaleOrder.objects.create(
+                    store=store,
+                    order_reference=order_reference,
+                    channel=SaleOrder.CHANNEL_LOJA_FISICA,
+                    performed_by=performed_by,
+                    idempotency_key=idempotency_key,
+                    idempotency_payload_hash=idempotency_payload_hash,
+                    customer_name=customer_name,
+                    customer_phone=customer_phone,
+                    customer_email=customer_email,
+                    delivery_method="pickup",
+                    payment_method=payment_method,
+                    # A PDV sale is a completed in-person transaction: the
+                    # money changed hands at the counter, so it starts
+                    # already paid (online-sales foundation). The
+                    # virtual/WhatsApp channel, by contrast, starts pending
+                    # until an operator confirms.
+                    payment_status=SaleOrder.PAYMENT_STATUS_PAID,
+                    paid_at=now,
+                    notes=notes,
+                    subtotal=rounded_subtotal,
+                    delivery_fee=Decimal("0.00"),
+                    total=rounded_subtotal,
+                )
+                record_initial_payment_event(
+                    sale_order,
+                    source=PaymentStatusEvent.SOURCE_SYSTEM,
+                    performed_by=performed_by,
+                    note="Venda PDV concluida no balcao",
+                )
 
-            SaleOrderItem.objects.bulk_create(
-                [
-                    SaleOrderItem(
-                        order=sale_order,
-                        product=products_by_code.get(item["public_code"]),
-                        variant_id=item["variant_id"],
-                        product_name=item["product_name"],
-                        sku=item["sku"],
-                        variant_name=item["variant_name"],
-                        variant_color_hex=item["variant_color_hex"],
-                        variant_image_url=item["variant_image_url"],
-                        quantity=item["quantity"],
-                        unit_price=item["unit_price"],
-                        line_total=item["line_total"],
-                    )
-                    for item in normalized_items
-                ]
-            )
+                SaleOrderItem.objects.bulk_create(
+                    [
+                        SaleOrderItem(
+                            order=sale_order,
+                            product=products_by_code.get(item["public_code"]),
+                            variant_id=item["variant_id"],
+                            product_name=item["product_name"],
+                            sku=item["sku"],
+                            variant_name=item["variant_name"],
+                            variant_color_hex=item["variant_color_hex"],
+                            variant_image_url=item["variant_image_url"],
+                            quantity=item["quantity"],
+                            unit_price=item["unit_price"],
+                            line_total=item["line_total"],
+                        )
+                        for item in normalized_items
+                    ]
+                )
 
-            # Same reasoning as CheckoutWhatsAppView: the decrement already
-            # happened above in _reserve_stock (one bulk_update, inside the
-            # same lock) -- this just persists the audit trail for it, built
-            # from data already in memory (no extra query/lock per product).
-            StockMovement.objects.bulk_create(
-                [
-                    StockMovement(
-                        store=store,
-                        product=products_by_code[item["public_code"]],
-                        variant_id=item["variant_id"],
-                        movement_type=StockMovement.TYPE_SAIDA,
-                        quantity=item["quantity"],
-                        previous_stock=item["previous_stock"],
-                        new_stock=item["new_stock"],
-                        reason=StockMovement.REASON_VENDA,
-                        source=StockMovement.SOURCE_PDV,
-                        sale_order=sale_order,
-                        performed_by=(
-                            request.user if request.user.is_authenticated else None
-                        ),
-                    )
-                    for item in normalized_items
-                ]
-            )
+                # Same reasoning as CheckoutWhatsAppView: the decrement
+                # already happened above in _reserve_stock (one bulk_update,
+                # inside the same lock) -- this just persists the audit trail
+                # for it, built from data already in memory.
+                StockMovement.objects.bulk_create(
+                    [
+                        StockMovement(
+                            store=store,
+                            product=products_by_code[item["public_code"]],
+                            variant_id=item["variant_id"],
+                            movement_type=StockMovement.TYPE_SAIDA,
+                            quantity=item["quantity"],
+                            previous_stock=item["previous_stock"],
+                            new_stock=item["new_stock"],
+                            reason=StockMovement.REASON_VENDA,
+                            source=StockMovement.SOURCE_PDV,
+                            sale_order=sale_order,
+                            performed_by=performed_by,
+                        )
+                        for item in normalized_items
+                    ]
+                )
 
-            response_serializer = PdvSaleResponseSerializer(
-                {
-                    "order_reference": order_reference,
-                    "items": normalized_items,
-                    "subtotal": rounded_subtotal,
-                    "total": rounded_subtotal,
-                    "payment_method": validated["payment_method"],
-                    "created_at": sale_order.created_at,
-                    "customer_email": customer_email,
-                }
+                response_serializer = PdvSaleResponseSerializer(
+                    {
+                        "order_reference": order_reference,
+                        "items": normalized_items,
+                        "subtotal": rounded_subtotal,
+                        "total": rounded_subtotal,
+                        "payment_method": payment_method,
+                        "created_at": sale_order.created_at,
+                        "customer_email": customer_email,
+                    }
+                )
+        except IntegrityError:
+            # Something tripped a DB constraint after the pre-flight check.
+            # The transaction above rolled back in full (no stock decrement,
+            # no order, no payment event).
+            existing = find_pdv_idempotent_order(
+                store=store, idempotency_key=idempotency_key
             )
+            if existing is not None and existing.channel == SaleOrder.CHANNEL_LOJA_FISICA:
+                # A concurrent PDV request holding the same key won the race.
+                logger.info(
+                    "pdv.sale.finalize_deduplicated",
+                    extra={
+                        **log_base,
+                        "event": "pdv.sale.finalize_deduplicated",
+                        "order_reference": existing.order_reference,
+                    },
+                )
+                return Response(
+                    PdvSaleResponseSerializer(
+                        serialize_persisted_pdv_sale(existing)
+                    ).data,
+                    status=status.HTTP_201_CREATED,
+                )
+            if existing is not None:
+                # The (store, key) unique constraint fired because another
+                # channel already holds this key. A clean 409 beats a 500.
+                logger.warning(
+                    "pdv.sale.idempotency_conflict",
+                    extra={
+                        **log_base,
+                        "event": "pdv.sale.idempotency_conflict",
+                        "order_reference": existing.order_reference,
+                        "existing_channel": existing.channel,
+                    },
+                )
+                return Response(
+                    {
+                        "code": "idempotency_key_conflict",
+                        "detail": "Esta chave de venda ja foi usada com outro carrinho.",
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            raise
+        except serializers.ValidationError:
+            logger.warning(
+                "pdv.sale.finalize_failed",
+                extra={**log_base, "event": "pdv.sale.finalize_failed"},
+            )
+            raise
 
+        logger.info(
+            "pdv.sale.finalize_succeeded",
+            extra={
+                **log_base,
+                "event": "pdv.sale.finalize_succeeded",
+                "order_reference": order_reference,
+                "duration_ms": round((time.monotonic() - started_at) * 1000, 1),
+            },
+        )
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 

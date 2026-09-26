@@ -11,7 +11,7 @@ import { salesService } from '@/services/sales.service'
 vi.mock('@/composables/useCurrentUser', () => ({ useCurrentUser: vi.fn() }))
 vi.mock('@/composables/useStoreSwitchEffect', () => ({ useStoreSwitchEffect: vi.fn() }))
 vi.mock('@/services/product.service', () => ({
-  default: { getByCode: vi.fn() },
+  default: { getByCode: vi.fn(), getFiltered: vi.fn() },
 }))
 vi.mock('@/services/pdvSale.service', () => ({
   default: { create: vi.fn() },
@@ -19,6 +19,13 @@ vi.mock('@/services/pdvSale.service', () => ({
 vi.mock('@/services/sales.service', () => ({
   salesService: { list: vi.fn() },
 }))
+
+/** Default payment method is `pix`, which requires the cashier to tick the
+ * "recebi o pagamento" box before finalize is enabled (the Bip Flow doesn't
+ * confirm payment automatically). */
+async function confirmPixPayment(wrapper: ReturnType<typeof mount>) {
+  await wrapper.find('[data-cy="pdv-payment-confirm-checkbox"]').setValue(true)
+}
 // Etapa C2 of the PDV camera-scanner evolution: DashboardPdvView.spec.ts
 // only needs to prove the camera decode is wired into the same lookup path
 // as the text input -- PdvCameraScannerModal.vue's own camera lifecycle
@@ -211,6 +218,7 @@ describe('DashboardPdvView (Etapa 3 of the QR-code stock-exit evolution)', () =>
     await wrapper.find('[data-cy="pdv-scan-input"]').trigger('keyup.enter')
     await flushPromises()
 
+    await confirmPixPayment(wrapper)
     await wrapper.find('[data-cy="pdv-finalize-sale"]').trigger('click')
     await flushPromises()
 
@@ -259,6 +267,7 @@ describe('DashboardPdvView (Etapa 3 of the QR-code stock-exit evolution)', () =>
     await wrapper.find('[data-cy="pdv-variant-option"]').trigger('click')
     await flushPromises()
 
+    await confirmPixPayment(wrapper)
     await wrapper.find('[data-cy="pdv-finalize-sale"]').trigger('click')
     await flushPromises()
 
@@ -288,6 +297,7 @@ describe('DashboardPdvView (Etapa 3 of the QR-code stock-exit evolution)', () =>
     await flushPromises()
     await wrapper.find('[data-cy="pdv-customer-phone"]').setValue('71999998888')
 
+    await confirmPixPayment(wrapper)
     await wrapper.find('[data-cy="pdv-finalize-sale"]').trigger('click')
     await flushPromises()
 
@@ -314,6 +324,7 @@ describe('DashboardPdvView (Etapa 3 of the QR-code stock-exit evolution)', () =>
     await flushPromises()
     await wrapper.find('[data-cy="pdv-customer-email"]').setValue('cliente@example.com')
 
+    await confirmPixPayment(wrapper)
     await wrapper.find('[data-cy="pdv-finalize-sale"]').trigger('click')
     await flushPromises()
 
@@ -352,6 +363,7 @@ describe('DashboardPdvView (Etapa 3 of the QR-code stock-exit evolution)', () =>
     await wrapper.find('[data-cy="pdv-scan-input"]').trigger('keyup.enter')
     await flushPromises()
 
+    await confirmPixPayment(wrapper)
     await wrapper.find('[data-cy="pdv-finalize-sale"]').trigger('click')
     await flushPromises()
 
@@ -376,6 +388,7 @@ describe('DashboardPdvView (Etapa 3 of the QR-code stock-exit evolution)', () =>
     await wrapper.find('[data-cy="pdv-scan-input"]').setValue('ABCD2345')
     await wrapper.find('[data-cy="pdv-scan-input"]').trigger('keyup.enter')
     await flushPromises()
+    await confirmPixPayment(wrapper)
     await wrapper.find('[data-cy="pdv-finalize-sale"]').trigger('click')
     await flushPromises()
 
@@ -399,6 +412,7 @@ describe('DashboardPdvView (Etapa 3 of the QR-code stock-exit evolution)', () =>
     await wrapper.find('[data-cy="pdv-scan-input"]').trigger('keyup.enter')
     await flushPromises()
 
+    await confirmPixPayment(wrapper)
     await wrapper.find('[data-cy="pdv-finalize-sale"]').trigger('click')
     await flushPromises()
 
@@ -416,6 +430,7 @@ describe('DashboardPdvView (Etapa 3 of the QR-code stock-exit evolution)', () =>
     await wrapper.find('[data-cy="pdv-scan-input"]').trigger('keyup.enter')
     await flushPromises()
 
+    await confirmPixPayment(wrapper)
     await wrapper.find('[data-cy="pdv-finalize-sale"]').trigger('click')
     await flushPromises()
 
@@ -583,6 +598,7 @@ describe('DashboardPdvView (Etapa 3 of the QR-code stock-exit evolution)', () =>
     await wrapper.find('[data-cy="pdv-scan-input"]').setValue('ABCD2345')
     await wrapper.find('[data-cy="pdv-scan-input"]').trigger('keyup.enter')
     await flushPromises()
+    await confirmPixPayment(wrapper)
     await wrapper.find('[data-cy="pdv-finalize-sale"]').trigger('click')
     await flushPromises()
 
@@ -716,6 +732,17 @@ describe('DashboardPdvView (Etapa 3 of the QR-code stock-exit evolution)', () =>
       expect(wrapper.find('[data-cy="pdv-total-card"]').text()).toContain('1 item')
     })
 
+    it('the sticky sidebar clears the sticky dashboard header', () => {
+      // Regression: with lg:top-6 the sticky column slid under the
+      // sticky top-0 z-50 DashboardHeader, hiding the cash field / Finalizar
+      // button when the page was scrolled.
+      const wrapper = mountPdvView()
+      const sidebar = wrapper.find('[data-cy="pdv-total-card"]').element.parentElement as HTMLElement
+      expect(sidebar.className).toContain('lg:sticky')
+      expect(sidebar.className).toContain('lg:top-20')
+      expect(sidebar.className).not.toContain('lg:top-6')
+    })
+
     it('shows the product image in the cart row when available, and a fallback icon otherwise', async () => {
       vi.mocked(ProductService.getByCode).mockResolvedValue({
         ...scannedProduct,
@@ -759,6 +786,7 @@ describe('DashboardPdvView (Etapa 3 of the QR-code stock-exit evolution)', () =>
       await wrapper.find('[data-cy="pdv-scan-input"]').setValue('ABCD2345')
       await wrapper.find('[data-cy="pdv-scan-input"]').trigger('keyup.enter')
       await flushPromises()
+      await confirmPixPayment(wrapper)
 
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true }))
       await flushPromises()
@@ -802,6 +830,167 @@ describe('DashboardPdvView (Etapa 3 of the QR-code stock-exit evolution)', () =>
 
       expect((input.element as HTMLInputElement).value).toBe('AB')
       wrapper.unmount()
+    })
+  })
+
+  describe('idempotency, payment gate and search (PDV/QR/payment evolution)', () => {
+    const okSaleResponse = {
+      order_reference: 'PDV-20260908-120000-000000',
+      items: [],
+      subtotal: '18.50',
+      total: '18.50',
+      payment_method: 'pix',
+      created_at: '2026-09-08T12:00:00Z',
+      customer_email: '',
+    }
+
+    const scanOne = async (wrapper: ReturnType<typeof mount>) => {
+      await wrapper.find('[data-cy="pdv-scan-input"]').setValue('ABCD2345')
+      await wrapper.find('[data-cy="pdv-scan-input"]').trigger('keyup.enter')
+      await flushPromises()
+    }
+
+    it('sends an idempotency_key with the sale and a fresh one after it completes', async () => {
+      vi.mocked(ProductService.getByCode).mockResolvedValue(scannedProduct as any)
+      vi.mocked(PdvSaleService.create).mockResolvedValue(okSaleResponse)
+      const wrapper = mountPdvView({ global: { stubs: { teleport: true } } })
+      await flushPromises()
+
+      await scanOne(wrapper)
+      await confirmPixPayment(wrapper)
+      await wrapper.find('[data-cy="pdv-finalize-sale"]').trigger('click')
+      await flushPromises()
+
+      const firstKey = vi.mocked(PdvSaleService.create).mock.calls[0]![0].idempotency_key
+      expect(firstKey).toMatch(/^[A-Za-z0-9:_-]{8,128}$/)
+
+      await scanOne(wrapper)
+      await confirmPixPayment(wrapper)
+      await wrapper.find('[data-cy="pdv-finalize-sale"]').trigger('click')
+      await flushPromises()
+
+      const secondKey = vi.mocked(PdvSaleService.create).mock.calls[1]![0].idempotency_key
+      expect(secondKey).not.toBe(firstKey)
+    })
+
+    it('reuses the same key across a retry of the same cart (no double sale)', async () => {
+      vi.mocked(ProductService.getByCode).mockResolvedValue(scannedProduct as any)
+      vi.mocked(PdvSaleService.create)
+        .mockRejectedValueOnce(Object.assign(new Error('network'), { response: { status: 503 }, config: {} }))
+        .mockResolvedValueOnce(okSaleResponse)
+      const wrapper = mountPdvView({ global: { stubs: { teleport: true } } })
+      await flushPromises()
+
+      await scanOne(wrapper)
+      await confirmPixPayment(wrapper)
+      await wrapper.find('[data-cy="pdv-finalize-sale"]').trigger('click')
+      await flushPromises()
+      // First attempt failed; cart preserved, retry with the SAME key.
+      expect(wrapper.find('[data-cy="pdv-cart-row"]').exists()).toBe(true)
+      await wrapper.find('[data-cy="pdv-finalize-sale"]').trigger('click')
+      await flushPromises()
+
+      const keyA = vi.mocked(PdvSaleService.create).mock.calls[0]![0].idempotency_key
+      const keyB = vi.mocked(PdvSaleService.create).mock.calls[1]![0].idempotency_key
+      expect(keyA).toBe(keyB)
+    })
+
+    it('regenerates the key and warns on a 409 conflict without clearing the cart', async () => {
+      vi.mocked(ProductService.getByCode).mockResolvedValue(scannedProduct as any)
+      vi.mocked(PdvSaleService.create).mockRejectedValue(
+        Object.assign(new Error('conflict'), {
+          response: { status: 409, data: { code: 'idempotency_key_conflict', detail: 'x' } },
+          config: {},
+        })
+      )
+      const wrapper = mountPdvView({ global: { stubs: { teleport: true } }, attachTo: document.body })
+      await flushPromises()
+
+      await scanOne(wrapper)
+      await confirmPixPayment(wrapper)
+      await wrapper.find('[data-cy="pdv-finalize-sale"]').trigger('click')
+      await flushPromises()
+      const firstKey = vi.mocked(PdvSaleService.create).mock.calls[0]![0].idempotency_key
+
+      await wrapper.find('[data-cy="pdv-finalize-sale"]').trigger('click')
+      await flushPromises()
+      const secondKey = vi.mocked(PdvSaleService.create).mock.calls[1]![0].idempotency_key
+
+      expect(secondKey).not.toBe(firstKey)
+      expect(wrapper.find('[data-cy="pdv-cart-row"]').exists()).toBe(true)
+      wrapper.unmount()
+    })
+
+    it('blocks finalize for a cash sale until the amount received covers the total', async () => {
+      vi.mocked(ProductService.getByCode).mockResolvedValue(scannedProduct as any)
+      const wrapper = mountPdvView()
+      await flushPromises()
+      await scanOne(wrapper)
+
+      await wrapper.find('[data-cy="pdv-payment-method"]').setValue('cash')
+      expect(wrapper.find('[data-cy="pdv-finalize-sale"]').attributes('disabled')).toBeDefined()
+
+      await wrapper.find('[data-cy="pdv-cash-received"]').setValue('10,00')
+      expect(wrapper.find('[data-cy="pdv-cash-insufficient"]').exists()).toBe(true)
+      expect(wrapper.find('[data-cy="pdv-finalize-sale"]').attributes('disabled')).toBeDefined()
+
+      await wrapper.find('[data-cy="pdv-cash-received"]').setValue('50,00')
+      expect(wrapper.find('[data-cy="pdv-cash-change"]').text()).toContain('31,50')
+      expect(wrapper.find('[data-cy="pdv-finalize-sale"]').attributes('disabled')).toBeUndefined()
+    })
+
+    it('blocks finalize for pix/card until the cashier confirms the payment was received', async () => {
+      vi.mocked(ProductService.getByCode).mockResolvedValue(scannedProduct as any)
+      const wrapper = mountPdvView()
+      await flushPromises()
+      await scanOne(wrapper)
+
+      expect(wrapper.find('[data-cy="pdv-payment-confirm-checkbox"]').exists()).toBe(true)
+      expect(wrapper.find('[data-cy="pdv-finalize-sale"]').attributes('disabled')).toBeDefined()
+
+      await confirmPixPayment(wrapper)
+      expect(wrapper.find('[data-cy="pdv-finalize-sale"]').attributes('disabled')).toBeUndefined()
+    })
+
+    it('always offers all three payment methods at the counter (online storefront config does not gate the PDV)', async () => {
+      const wrapper = mountPdvView()
+      await flushPromises()
+
+      const options = wrapper.findAll('[data-cy="pdv-payment-method"] option')
+      expect(options.map((o) => o.text())).toEqual(['Pix', 'Cartão', 'Dinheiro'])
+      expect(wrapper.find('[data-cy="pdv-payment-method-note"]').exists()).toBe(false)
+    })
+
+    it('adds a product from the search fallback to the cart', async () => {
+      vi.mocked(ProductService.getFiltered).mockResolvedValue([
+        { ...scannedProduct, id: 9, name: 'Regata dry', public_code: 'RGT99999' },
+      ] as any)
+      const wrapper = mountPdvView()
+      await flushPromises()
+
+      await wrapper.find('[data-cy="pdv-toggle-search"]').trigger('click')
+      await wrapper.find('[data-cy="pdv-search-input"]').setValue('regata')
+      await wrapper.find('[data-cy="pdv-search-panel"] form').trigger('submit')
+      await flushPromises()
+
+      expect(ProductService.getFiltered).toHaveBeenCalledWith({ search: 'regata' })
+      await wrapper.find('[data-cy="pdv-search-result"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('[data-cy="pdv-cart-row"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('Regata dry')
+    })
+
+    it('rejects an unrecognised scan payload with a helpful message', async () => {
+      const wrapper = mountPdvView()
+      await flushPromises()
+
+      await wrapper.find('[data-cy="pdv-scan-input"]').setValue('javascript:alert(1)')
+      await wrapper.find('[data-cy="pdv-scan-input"]').trigger('keyup.enter')
+      await flushPromises()
+
+      expect(wrapper.find('[data-cy="pdv-scan-error"]').text()).toContain('não reconhecido')
+      expect(ProductService.getByCode).not.toHaveBeenCalled()
     })
   })
 })

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
-import { CameraIcon, EyeIcon, MinusIcon, PlusIcon, QrCodeIcon, TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { CameraIcon, EyeIcon, MagnifyingGlassIcon, MinusIcon, PlusIcon, QrCodeIcon, TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline';
 import { useCurrentUser } from '@/composables/useCurrentUser';
 import { usePdvCart, type PdvCartAddResult, type PdvCartLine } from '@/composables/usePdvCart';
 import { useStoreSwitchEffect } from '@/composables/useStoreSwitchEffect';
@@ -16,7 +16,9 @@ import { PDV_PAYMENT_METHODS, type PdvPaymentMethod } from '@/types/pdvSale';
 import type { SaleOrder } from '@/types/sales';
 import type { ReceiptData } from '@/types/receipt';
 import type { Product, ProductVariant } from '@/schemas/product.schema';
-import { extractPublicCodeFromScan } from '@/utils/pdvScan';
+import { parseScanPayload } from '@/utils/pdvScan';
+import { calculateChange } from '@/utils/pdvChange';
+import { newIdempotencyKey } from '@/utils/idempotency';
 import { playScanSuccessBeep } from '@/utils/sound';
 import PdvSaleReceiptModal from '@/components/dashboard/product-table/PdvSaleReceiptModal.vue';
 import PdvCameraScannerModal, {
@@ -41,6 +43,12 @@ const extractPdvSaleErrorMessage = (error: unknown): string => {
   const data = error.response?.data;
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return PDV_GENERIC_SALE_ERROR;
+  }
+
+  // Commercial-rule rejection (online-sales foundation): {code, detail}.
+  const detail = (data as Record<string, unknown>).detail;
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail;
   }
 
   const fieldErrors = Object.values(data).filter(
@@ -90,6 +98,47 @@ const customerPhone = ref('');
 const customerEmail = ref('');
 const notes = ref('');
 const isSubmitting = ref(false);
+
+// PDV/QR/payment evolution.
+// One opaque key per running cart, reused on every finalize retry so a
+// double-tap / held Enter / network retry can't create a second sale. Reset
+// on a completed sale, a manual reset, a store switch, or a 409 conflict.
+const idempotencyKey = ref(newIdempotencyKey());
+
+// Cash payment: the amount handed over drives the change display and blocks
+// finalize below the total. All maths is in integer cents (utils/pdvChange).
+const cashReceived = ref('');
+const changeInfo = computed(() => calculateChange(cashReceived.value, cart.subtotal.value));
+
+// Pix / card: the Bip Flow does not process money, so the cashier must
+// explicitly confirm they saw the payment land before the sale is finalized
+// -- reading or showing a QR never proves payment.
+const paymentReceivedConfirmed = ref(false);
+
+// Note: the counter always offers all of PDV_PAYMENT_METHODS.
+// StoreCommerceSettings.accepts_pix/card/cash is the *online storefront's*
+// payment config -- disabling "cartao" for the vitrine must never refuse
+// the physical card machine at the counter.
+
+const paymentGateSatisfied = computed(() => {
+  if (paymentMethod.value === 'cash') {
+    return changeInfo.value.isSufficient;
+  }
+  return paymentReceivedConfirmed.value;
+});
+
+const canFinalizeSale = computed(
+  () => !cart.isEmpty.value && !isSubmitting.value && paymentGateSatisfied.value,
+);
+
+// Product search fallback (PDV/QR/payment evolution): the PDV must stay
+// usable with no camera and no HID reader -- search by name / SKU / code,
+// converging on the exact same applyResolvedProduct() chokepoint as a scan.
+const isSearchOpen = ref(false);
+const searchQuery = ref('');
+const searchResults = ref<Product[]>([]);
+const isSearching = ref(false);
+const searchError = ref<string | null>(null);
 
 // Etapa R4 of the QR-code stock-exit refinement: lets the cashier confirm a
 // sale actually registered without leaving the PDV screen. Shows the most
@@ -183,63 +232,113 @@ const cartAddFailureMessage = (product: Product, result: PdvCartAddFailure): str
 };
 
 /**
- * Etapa C1/C2 of the PDV camera-scanner evolution: the one place that
- * resolves a raw scan (typed, HID-scanned, or camera-decoded) into a cart
- * addition. `extractPublicCodeFromScan()` is a no-op for a bare code (what
- * the text input/HID path always produced already) and only does real work
- * for a camera decode, whose raw text is the product's full deep-link URL,
- * not the bare `public_code` (see `utils/pdvScan.ts`).
+ * The one place that turns a resolved Product into a cart addition (or a
+ * variant prompt). Every entry point -- typed code, HID scan, camera decode,
+ * product search -- converges here, so the availability / stock / variant
+ * rules and the confirmation beep are never duplicated.
  */
 type PdvScanOutcome =
   | { ok: true; product: Product; action: 'added' | 'variant_required' }
   | { ok: false; message: string };
 
+const applyResolvedProduct = (product: Product): PdvScanOutcome => {
+  const activeVariants = activeVariantsForProduct(product);
+
+  if (activeVariants.length > 0) {
+    const hasAvailableVariant = activeVariants.some(
+      (variant) => variantAvailableStockForProduct(product, variant) > 0
+    );
+
+    if (!hasAvailableVariant) {
+      return { ok: false, message: `"${product.name}" esta indisponivel no momento.` };
+    }
+
+    variantPickerProduct.value = product;
+    return { ok: true, product, action: 'variant_required' };
+  }
+
+  variantPickerProduct.value = null;
+  const result = cart.addProduct(product);
+
+  if (!result.ok) {
+    return { ok: false, message: cartAddFailureMessage(product, result) };
+  }
+
+  // Etapa C3 of the PDV camera-scanner evolution: one chokepoint for the
+  // confirmation beep, so HID/manual/camera/search all get the same feedback.
+  playScanSuccessBeep();
+  return { ok: true, product, action: 'added' };
+};
+
+/**
+ * Resolves a raw scan (typed, HID-scanned, or camera-decoded) into a cart
+ * addition. `parseScanPayload()` (utils/pdvScan.ts) is the single hardened
+ * normalisation step: it rejects an over-long, control-character or
+ * script-scheme payload and only ever yields a bare `public_code`, whether
+ * the input was a deep-link URL (camera) or a plain code (HID / typing).
+ */
 const resolveScannedCode = async (raw: string): Promise<PdvScanOutcome> => {
-  const code = extractPublicCodeFromScan(raw);
+  const parsed = parseScanPayload(raw);
+  if (!parsed.ok) {
+    const message =
+      parsed.reason === 'empty'
+        ? 'Informe um código.'
+        : parsed.reason === 'too_long'
+          ? 'Código inválido (muito longo).'
+          : 'Código não reconhecido. Use a busca por nome.';
+    return { ok: false, message };
+  }
 
   try {
-    const product = await ProductService.getByCode(code);
-    const activeVariants = activeVariantsForProduct(product);
-
-    if (activeVariants.length > 0) {
-      const hasAvailableVariant = activeVariants.some(
-        (variant) => variantAvailableStockForProduct(product, variant) > 0
-      );
-
-      if (!hasAvailableVariant) {
-        return {
-          ok: false,
-          message: `"${product.name}" esta indisponivel no momento.`,
-        };
-      }
-
-      variantPickerProduct.value = product;
-      return {
-        ok: true,
-        product,
-        action: 'variant_required',
-      };
-    }
-
-    variantPickerProduct.value = null;
-    const result = cart.addProduct(product);
-
-    if (!result.ok) {
-      return {
-        ok: false,
-        message: cartAddFailureMessage(product, result),
-      };
-    }
-
-    // Etapa C3 of the PDV camera-scanner evolution: one chokepoint for the
-    // confirmation beep, so HID/manual/camera scans all get the same
-    // feedback instead of only the camera's vibration.
-    playScanSuccessBeep();
-    return { ok: true, product, action: 'added' };
+    const product = await ProductService.getByCode(parsed.code);
+    return applyResolvedProduct(product);
   } catch (error: unknown) {
-    Logger.warn('PDV code lookup failed', buildErrorContext(error as ApplicationError, { code }));
-    return { ok: false, message: `Código "${code}" não encontrado.` };
+    Logger.warn(
+      'PDV code lookup failed',
+      buildErrorContext(error as ApplicationError, { code: parsed.code })
+    );
+    return { ok: false, message: `Código "${parsed.code}" não encontrado.` };
   }
+};
+
+const toggleSearch = (): void => {
+  isSearchOpen.value = !isSearchOpen.value;
+  if (!isSearchOpen.value) {
+    searchQuery.value = '';
+    searchResults.value = [];
+    searchError.value = null;
+    focusScanInput();
+  }
+};
+
+const runProductSearch = async (): Promise<void> => {
+  const term = searchQuery.value.trim();
+  if (term.length < 2 || isSearching.value) {
+    return;
+  }
+  isSearching.value = true;
+  searchError.value = null;
+  try {
+    const results = await ProductService.getFiltered({ search: term });
+    searchResults.value = results.slice(0, 20);
+    searchError.value =
+      results.length === 0 ? `Nenhum produto encontrado para "${term}".` : null;
+  } catch (error: unknown) {
+    Logger.warn('PDV product search failed', buildErrorContext(error as ApplicationError));
+    searchError.value = 'Não foi possível buscar produtos. Tente novamente.';
+  } finally {
+    isSearching.value = false;
+  }
+};
+
+const handleSearchResultClick = (product: Product): void => {
+  const outcome = applyResolvedProduct(product);
+  if (!outcome.ok) {
+    searchError.value = outcome.message;
+    return;
+  }
+  searchError.value = null;
+  scanError.value = null;
 };
 
 const handleScanSubmit = async (): Promise<void> => {
@@ -360,12 +459,24 @@ const resetSale = (): void => {
   customerEmail.value = '';
   notes.value = '';
   paymentMethod.value = 'pix';
+  cashReceived.value = '';
+  paymentReceivedConfirmed.value = false;
   scanError.value = null;
+  // A finished (or abandoned) cart is a new logical operation -- the next
+  // finalize must not be deduplicated against the one just completed.
+  idempotencyKey.value = newIdempotencyKey();
   focusScanInput();
 };
 
+// Switching the payment method invalidates whatever confirmation the cashier
+// had already given for the previous one.
+watch(paymentMethod, () => {
+  cashReceived.value = '';
+  paymentReceivedConfirmed.value = false;
+});
+
 const handleFinalizeSale = async (): Promise<void> => {
-  if (cart.isEmpty.value || isSubmitting.value) {
+  if (!canFinalizeSale.value) {
     return;
   }
 
@@ -379,6 +490,7 @@ const handleFinalizeSale = async (): Promise<void> => {
       customer_phone: customerPhone.value.trim() || undefined,
       customer_email: customerEmail.value.trim() || undefined,
       notes: notes.value.trim() || undefined,
+      idempotency_key: idempotencyKey.value,
     });
 
     lastCompletedSale.value = response;
@@ -388,7 +500,20 @@ const handleFinalizeSale = async (): Promise<void> => {
     void loadRecentPdvSales();
   } catch (error: unknown) {
     Logger.error('PDV sale failed', buildErrorContext(error as ApplicationError));
-    toastError(extractPdvSaleErrorMessage(error));
+
+    const statusCode = isAxiosError(error) ? error.response?.status : undefined;
+    if (statusCode === 409) {
+      // Same key, different cart -- the previous sale under this key may
+      // already be registered. Start a fresh key and send the cashier to
+      // "Últimas vendas" to check before retrying.
+      idempotencyKey.value = newIdempotencyKey();
+      toastWarning(
+        'Esta venda já foi registrada com este identificador. Confira em "Últimas vendas" antes de finalizar de novo.'
+      );
+      void loadRecentPdvSales();
+    } else {
+      toastError(extractPdvSaleErrorMessage(error));
+    }
   } finally {
     isSubmitting.value = false;
   }
@@ -431,7 +556,7 @@ useStoreSwitchEffect(() => {
 const handleGlobalKeydown = (event: KeyboardEvent): void => {
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
     event.preventDefault();
-    if (!cart.isEmpty.value && !isSubmitting.value) {
+    if (canFinalizeSale.value) {
       void handleFinalizeSale();
     }
     return;
@@ -512,10 +637,66 @@ onBeforeUnmount(() => {
         >
           {{ scanError }}
         </p>
-        <p class="mt-2 text-[10px] text-bip-muted">
-          Atalho: <kbd class="rounded border border-[#D1D5DB] px-1 py-0.5 font-mono text-[9px]">Ctrl</kbd>
-          + <kbd class="rounded border border-[#D1D5DB] px-1 py-0.5 font-mono text-[9px]">Enter</kbd> finaliza a venda.
-        </p>
+        <div class="mt-3 flex items-center justify-between gap-3">
+          <p class="text-[10px] text-bip-muted">
+            Atalho: <kbd class="rounded border border-[#D1D5DB] px-1 py-0.5 font-mono text-[9px]">Ctrl</kbd>
+            + <kbd class="rounded border border-[#D1D5DB] px-1 py-0.5 font-mono text-[9px]">Enter</kbd> finaliza a venda.
+          </p>
+          <button
+            type="button"
+            data-cy="pdv-toggle-search"
+            class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#D1D5DB] px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-bip-muted transition hover:border-[#111827]/40 hover:text-[#111827]"
+            :aria-expanded="isSearchOpen"
+            @click="toggleSearch"
+          >
+            <MagnifyingGlassIcon class="h-3.5 w-3.5" />
+            Buscar produto
+          </button>
+        </div>
+
+        <div v-if="isSearchOpen" data-cy="pdv-search-panel" class="mt-3 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-3">
+          <form class="flex gap-2" @submit.prevent="runProductSearch">
+            <input
+              v-model="searchQuery"
+              type="search"
+              data-cy="pdv-search-input"
+              placeholder="Nome, SKU ou código"
+              class="w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm outline-none focus:border-[#111827]"
+            />
+            <button
+              type="submit"
+              data-cy="pdv-search-submit"
+              :disabled="isSearching || searchQuery.trim().length < 2"
+              class="shrink-0 rounded-lg bg-[#111827] px-3 py-2 text-xs font-black uppercase tracking-widest text-white disabled:opacity-40"
+            >
+              {{ isSearching ? '...' : 'Buscar' }}
+            </button>
+          </form>
+
+          <p v-if="searchError" data-cy="pdv-search-error" role="alert" class="mt-2 text-xs font-bold text-[#111827]">
+            {{ searchError }}
+          </p>
+
+          <ul v-if="searchResults.length > 0" data-cy="pdv-search-results" class="mt-2 max-h-60 space-y-1 overflow-y-auto">
+            <li v-for="product in searchResults" :key="product.public_code || product.id">
+              <button
+                type="button"
+                data-cy="pdv-search-result"
+                :disabled="!product.is_available"
+                class="flex w-full items-center justify-between gap-3 rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-left text-sm transition hover:border-[#111827]/40 disabled:cursor-not-allowed disabled:opacity-45"
+                @click="handleSearchResultClick(product)"
+              >
+                <span class="min-w-0">
+                  <span class="block truncate font-bold text-[#05050A]">{{ product.name }}</span>
+                  <span class="block text-[10px] text-bip-muted">
+                    {{ product.public_code }}<template v-if="product.sku"> · {{ product.sku }}</template>
+                  </span>
+                </span>
+                <span class="shrink-0 font-mono font-black text-[#111827]">{{ formatBRL(product.price) }}</span>
+              </button>
+            </li>
+          </ul>
+        </div>
       </section>
 
       <section class="rounded-xl border border-[#E5E7EB] bg-white p-6">
@@ -630,7 +811,13 @@ onBeforeUnmount(() => {
       </section>
       </div>
 
-      <div class="space-y-6 lg:sticky lg:top-6">
+      <!-- top-20 (not top-6): the sticky column must clear the sticky
+           DashboardHeader (sticky top-0, z-50), otherwise the total card /
+           "Valor recebido" field / Finalizar button slide behind it when
+           the page is scrolled. The critical controls live at the top of
+           this column, so a taller-than-viewport sidebar is fine -- the
+           page scrolls to reveal "Últimas vendas". -->
+      <div class="space-y-6 lg:sticky lg:top-20">
       <section class="rounded-xl border border-[#E5E7EB] bg-white p-6" data-cy="pdv-total-card">
         <p class="text-[10px] font-black uppercase tracking-[0.2em] text-bip-muted">Total da venda</p>
         <p role="status" data-cy="pdv-cart-subtotal" class="mt-1 text-4xl font-black tracking-tighter text-[#05050A]">
@@ -640,10 +827,63 @@ onBeforeUnmount(() => {
           {{ cart.itemCount.value }} {{ cart.itemCount.value === 1 ? 'item' : 'itens' }}
         </p>
 
+        <!-- Cash: amount received + change, and finalize is blocked below the total. -->
+        <div v-if="paymentMethod === 'cash'" class="mt-4 space-y-2" data-cy="pdv-cash-panel">
+          <label class="block text-[10px] font-black uppercase tracking-[0.2em] text-bip-muted">
+            Valor recebido
+          </label>
+          <input
+            v-model="cashReceived"
+            type="text"
+            inputmode="decimal"
+            data-cy="pdv-cash-received"
+            placeholder="0,00"
+            class="w-full rounded-xl border border-[#D1D5DB] bg-white px-4 py-3 text-right font-mono text-lg"
+          />
+          <p
+            v-if="changeInfo.hasAmount && !changeInfo.isSufficient"
+            data-cy="pdv-cash-insufficient"
+            role="alert"
+            class="text-xs font-bold text-[#B91C1C]"
+          >
+            Faltam {{ formatBRL(changeInfo.missing) }} para cobrir o total.
+          </p>
+          <p
+            v-else-if="changeInfo.isSufficient"
+            data-cy="pdv-cash-change"
+            role="status"
+            class="flex items-center justify-between text-sm font-black text-[#05050A]"
+          >
+            <span class="text-[10px] font-black uppercase tracking-[0.2em] text-bip-muted">Troco</span>
+            <span class="font-mono">{{ formatBRL(changeInfo.change) }}</span>
+          </p>
+        </div>
+
+        <!-- Pix / card: the Bip Flow does not process money, so the cashier confirms manually. -->
+        <label
+          v-else
+          class="mt-4 flex items-start gap-2 text-xs font-semibold text-[#05050A]"
+          data-cy="pdv-payment-confirm"
+        >
+          <input
+            v-model="paymentReceivedConfirmed"
+            type="checkbox"
+            data-cy="pdv-payment-confirm-checkbox"
+            class="mt-0.5 h-4 w-4 shrink-0 rounded border-[#D1D5DB]"
+          />
+          <span>
+            Confirmo que recebi o pagamento
+            {{ paymentMethod === 'pix' ? 'via Pix' : 'no cartão' }}.
+            <span class="mt-0.5 block text-[10px] font-normal text-bip-muted">
+              O Bip Flow não confirma pagamento automaticamente. Marque só depois de ver o valor cair.
+            </span>
+          </span>
+        </label>
+
         <button
           type="button"
           data-cy="pdv-finalize-sale"
-          :disabled="cart.isEmpty.value || isSubmitting"
+          :disabled="!canFinalizeSale"
           class="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#111827] text-sm font-black uppercase tracking-widest text-white shadow-xl shadow-[#111827]/20 transition-all hover:bg-[#111827]/90 disabled:cursor-not-allowed disabled:opacity-50"
           @click="handleFinalizeSale"
         >

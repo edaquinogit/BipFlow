@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, ref, toRef, watch } from 'vue';
-import { ArrowPathIcon, XMarkIcon } from '@heroicons/vue/24/outline';
+import { ArrowPathIcon, BoltIcon, BoltSlashIcon, XMarkIcon } from '@heroicons/vue/24/outline';
 import { useDialogA11y } from '@/composables/useDialogA11y';
 import { usePdvCameraScanner } from '@/composables/usePdvCameraScanner';
 
@@ -39,8 +39,19 @@ const handleDecode = (rawText: string): void => {
   emit('decode', rawText);
 };
 
-const { error, cameras, activeCameraId, hasMultipleCameras, start, stop, switchCamera } =
-  usePdvCameraScanner(videoRef, handleDecode);
+const {
+  error,
+  cameras,
+  activeCameraId,
+  hasMultipleCameras,
+  hasTorch,
+  isTorchOn,
+  slowHint,
+  start,
+  stop,
+  switchCamera,
+  toggleTorch,
+} = usePdvCameraScanner(videoRef, handleDecode);
 
 const handleSwitchCamera = async (): Promise<void> => {
   const ids = cameras.value.map((camera) => camera.id);
@@ -110,17 +121,41 @@ watch(
           >
             {{ feedback.message }}
           </p>
-
-          <button
-            v-if="hasMultipleCameras"
-            type="button"
-            data-cy="pdv-camera-switch"
-            class="switch-button"
-            @click="handleSwitchCamera"
+          <p
+            v-else-if="slowHint"
+            data-cy="pdv-camera-slow-hint"
+            role="status"
+            aria-live="polite"
+            class="camera-message camera-message--hint"
           >
-            <ArrowPathIcon class="mr-1.5 inline h-4 w-4" />
-            Trocar câmera
-          </button>
+            Aproxime o código, aumente o brilho da tela ou use a busca por nome.
+          </p>
+
+          <div class="camera-actions">
+            <button
+              v-if="hasTorch"
+              type="button"
+              data-cy="pdv-camera-torch"
+              :aria-pressed="isTorchOn"
+              :aria-label="isTorchOn ? 'Desligar lanterna' : 'Ligar lanterna'"
+              class="switch-button"
+              @click="toggleTorch"
+            >
+              <component :is="isTorchOn ? BoltSlashIcon : BoltIcon" class="mr-1.5 inline h-4 w-4" />
+              {{ isTorchOn ? 'Lanterna ligada' : 'Lanterna' }}
+            </button>
+
+            <button
+              v-if="hasMultipleCameras"
+              type="button"
+              data-cy="pdv-camera-switch"
+              class="switch-button"
+              @click="handleSwitchCamera"
+            >
+              <ArrowPathIcon class="mr-1.5 inline h-4 w-4" />
+              Trocar câmera
+            </button>
+          </div>
         </div>
       </div>
     </Transition>
@@ -209,6 +244,18 @@ watch(
 .camera-message--error {
   background-color: rgba(17, 24, 39, 0.15);
   color: #f472b6;
+}
+
+.camera-message--hint {
+  background-color: rgba(250, 204, 21, 0.15);
+  color: #fde047;
+}
+
+.camera-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
 }
 
 .switch-button {

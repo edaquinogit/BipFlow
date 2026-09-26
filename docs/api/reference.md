@@ -705,7 +705,8 @@ Payload:
   "customer_name": "Cliente balcao",
   "customer_phone": "5571999999999",
   "customer_email": "cliente@example.com",
-  "notes": "Venda no caixa"
+  "notes": "Venda no caixa",
+  "idempotency_key": "b1c2d3e4-f5a6-7b8c-9d0e-1f2a3b4c5d6e"
 }
 ```
 
@@ -725,7 +726,17 @@ Regras:
 - `public_code` e resolvido dentro da loja atual;
 - produtos indisponiveis, sem estoque ou de outra loja sao rejeitados;
 - linhas repetidas sao agregadas antes da reserva de estoque;
-- o pedido e os movimentos de estoque sao gravados na mesma transacao.
+- o pedido, o evento de pagamento e os movimentos de estoque sao gravados
+  na mesma transacao (rollback integral em qualquer falha);
+- `payment_method` aceita sempre `pix`, `card` ou `cash`. O balcao **nao**
+  le `StoreCommerceSettings.accepts_*` (essa e a config da vitrine online);
+- `idempotency_key` (opcional, `[A-Za-z0-9:_-]{8,128}`): repetir a mesma
+  chave com o mesmo carrinho devolve a venda original (201); repetir com um
+  carrinho diferente e HTTP 409 `idempotency_key_conflict`. A constraint de
+  unicidade `(store, idempotency_key)` e compartilhada com o checkout
+  online, entao uma chave ja usada por um pedido virtual da mesma loja
+  tambem devolve 409. Uma corrida real entre dois processos com a mesma
+  chave resulta em exatamente uma venda.
 
 Envio de recibo:
 
