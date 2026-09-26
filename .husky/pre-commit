@@ -15,15 +15,7 @@ if [ -n "$blocked_env_files" ]; then
   exit 1
 fi
 
-unsafe_patterns="$(printf '%s\n' \
-  'bipflow[_-]password' \
-  'change[-_]me' \
-  'django[-_]insecure' \
-  "TODO.*secre"t \
-  "FIXME.*passwor"d \
-  "admin"123 \
-  "password"123
-)"
+. "$(dirname -- "$0")/lib/unsafe-secret-patterns.sh"
 
 for pattern in $unsafe_patterns; do
   if git diff --cached -U0 | grep -E "^\+.*(${pattern})" >/dev/null; then
