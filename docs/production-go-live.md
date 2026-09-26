@@ -77,6 +77,27 @@ Choose exactly one mode and validate only that mode.
 - `CSRF_TRUSTED_ORIGINS` contains exact frontend origin(s).
 - `FRONTEND_BASE_URL` points to the canonical frontend URL.
 
+## Transactional Email (password reset / verification)
+
+`manage.py check` (run by the Docker entrypoint's `migrate` step) now fails the
+deploy when `DJANGO_ENV=production` and transactional email cannot be delivered
+— `bipflow.E001` for a missing/placeholder `EMAIL_BACKEND`, `EMAIL_HOST`,
+`EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` or `DEFAULT_FROM_EMAIL`; `bipflow.E002`
+for a non-`https://` `FRONTEND_BASE_URL`. A failed deploy leaves the previous
+revision serving.
+
+Manual smoke after the env is set:
+
+1. `curl -s -o /dev/null -w "%{http_code}" -X POST https://SEU_BACKEND/api/auth/password-reset/ -H "Content-Type: application/json" -d '{"email":"<owner>"}'` returns `200`.
+2. The owner receives the email (inbox **and** spam) within a minute.
+3. The link host is exactly the production frontend (`https://bipflow.pages.dev/reset-password?uid=…&token=…`).
+4. Do **not** open/copy the link into any shared channel — it is a single-use credential.
+5. A request for a definitely-unknown address also returns `200` with an identical body (no account enumeration).
+
+If SMTP breaks after go-live, the endpoint still returns `200` and logs
+`password_reset.email_delivery_failed error_type=…` (type only, no address or
+token) — check the backend logs for that line.
+
 ## Quick API Health Verification
 
 Run from a machine that can reach production:

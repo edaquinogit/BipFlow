@@ -566,6 +566,24 @@ EMAIL_USE_TLS = get_bool_env("EMAIL_USE_TLS", False)
 EMAIL_USE_SSL = get_bool_env("EMAIL_USE_SSL", False)
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "no-reply@bipflow.local")
 
+# send_mail() has no timeout of its own: a stuck SMTP handshake would pin the
+# gunicorn worker until the platform reaps it. Bound every connection attempt
+# so the password-reset request fails fast and predictably instead.
+EMAIL_TIMEOUT = get_int_env("EMAIL_TIMEOUT", 10)
+
+# STARTTLS and implicit TLS are mutually exclusive. Django's SMTP backend only
+# rejects the combination lazily on the first send (i.e. as a runtime 500 on
+# the password-reset path); promote it to a boot-time failure.
+if EMAIL_USE_TLS and EMAIL_USE_SSL:
+    raise ImproperlyConfigured(
+        "EMAIL_USE_TLS and EMAIL_USE_SSL are mutually exclusive -- enable only one."
+    )
+
+# Completeness of the production SMTP config (and the https FRONTEND_BASE_URL
+# that ends up inside reset links) is enforced by the registered deploy check
+# bipdelivery.api.checks.check_production_email_config, so an incomplete config
+# fails `manage.py check` / the release phase instead of 500-ing at send time.
+
 # ------------------------------------------------------------------------------
 # ORDER CHECKOUT / WHATSAPP
 # ------------------------------------------------------------------------------

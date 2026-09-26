@@ -36,7 +36,7 @@ export interface RegisterPayload {
 }
 export interface RegisterResponse { message: string; email: string; profile_kind?: string; registration_context?: string; }
 export interface RequestResetPayload { email: string; }
-export interface RequestResetResponse { message: string; email: string; }
+export interface RequestResetResponse { message: string; }
 export interface ConfirmResetPayload { uid: string; token: string; password: string; confirm_password: string; }
 export interface ConfirmResetResponse { message: string; email: string; }
 export interface ApiError { response?: { status?: number; data?: { detail?: string; message?: string; [key: string]: any; }; }; }
