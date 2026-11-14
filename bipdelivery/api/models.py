@@ -1,6 +1,7 @@
+import re
 import secrets
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
 
 from django.conf import settings
@@ -1711,7 +1712,7 @@ class StoreShippingSettings(models.Model):
         default="",
         validators=[
             RegexValidator(
-                regex=r"^\\d{8}$",
+                regex=r"^\d{8}$",
                 message="Informe o CEP de origem com 8 digitos.",
             )
         ],
@@ -1739,7 +1740,7 @@ class StoreShippingSettings(models.Model):
     def clean(self) -> None:
         super().clean()
         errors = {}
-        if self.origin_postal_code and not re.fullmatch(r"\\d{8}", self.origin_postal_code):
+        if self.origin_postal_code and not re.fullmatch(r"\d{8}", self.origin_postal_code):
             errors["origin_postal_code"] = "Informe o CEP de origem com 8 digitos."
         if not isinstance(self.package_options, list):
             errors["package_options"] = "As embalagens devem ser informadas em uma lista."
