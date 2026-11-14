@@ -2212,7 +2212,11 @@ class StoreShippingSettingsSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["created_at", "updated_at"]
+        read_only_fields = [
+            "national_shipping_enabled",
+            "created_at",
+            "updated_at",
+        ]
 
     def validate_origin_postal_code(self, value: str) -> str:
         digits = re.sub(r"\\D", "", value)
