@@ -68,6 +68,7 @@ from .models import (
     StockMovement,
     Store,
     StoreCommerceSettings,
+    StoreShippingSettings,
     StorefrontBanner,
     StorefrontAppearance,
     StoreMembership,
@@ -121,6 +122,7 @@ from .serializers import (
     SaleOrderSummarySerializer,
     SaleOrderTimeseriesPointSerializer,
     StoreCommerceSettingsSerializer,
+    StoreShippingSettingsSerializer,
     StockMovementCreateSerializer,
     StockMovementSerializer,
     StoreAppearanceSettingsSerializer,
@@ -2063,6 +2065,46 @@ class StoreCommerceSettingsView(APIView):
 
         settings_row = StoreCommerceSettings.get_for_store(store)
         serializer = StoreCommerceSettingsSerializer(
+            settings_row, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class StoreShippingSettingsView(APIView):
+    """Read/update shipping configuration for the authenticated current store.
+
+    Store resolution and membership checks mirror the commerce-settings
+    endpoint. No store identifier is accepted from the request body.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        store = resolve_request_store(request)
+        if not can_read_storefront_dashboard_store(request, store):
+            return permission_denied_error(
+                "Voce nao possui permissao para acessar as configuracoes de frete desta loja."
+            )
+        settings_row = StoreShippingSettings.get_for_store(store)
+        return Response(
+            StoreShippingSettingsSerializer(settings_row).data,
+            status=status.HTTP_200_OK,
+        )
+
+    def patch(self, request, *args, **kwargs):
+        store = resolve_request_store(request)
+        if not can_read_storefront_dashboard_store(request, store):
+            return permission_denied_error(
+                "Voce nao possui permissao para acessar as configuracoes de frete desta loja."
+            )
+        if not can_edit_storefront_dashboard_store(request, store):
+            return permission_denied_error(
+                "Voce nao possui permissao para editar as configuracoes de frete desta loja."
+            )
+        settings_row = StoreShippingSettings.get_for_store(store)
+        serializer = StoreShippingSettingsSerializer(
             settings_row, data=request.data, partial=True
         )
         serializer.is_valid(raise_exception=True)
