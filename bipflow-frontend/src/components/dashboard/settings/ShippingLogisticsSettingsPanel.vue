@@ -17,7 +17,7 @@ const settings = ref<StoreShippingSettings>({
 const originCep = computed({
   get: () => settings.value.origin_postal_code,
   set: (value: string) => {
-    settings.value.origin_postal_code = value.replace(/\\D/g, '').slice(0, 8);
+    settings.value.origin_postal_code = value.replace(/\D/g, '').slice(0, 8);
   },
 });
 
@@ -56,7 +56,7 @@ function isValidPackage(option: ShippingPackageOption): boolean {
 }
 
 async function saveSettings(): Promise<void> {
-  const cep = settings.value.origin_postal_code.replace(/\\D/g, '');
+  const cep = settings.value.origin_postal_code.replace(/\D/g, '');
   if (cep && cep.length !== 8) {
     toastError('Informe um CEP de origem com 8 dígitos.');
     return;
