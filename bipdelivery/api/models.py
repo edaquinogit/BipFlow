@@ -270,6 +270,38 @@ class Product(models.Model):
     size = models.CharField(
         max_length=50, blank=True, null=True, help_text="E.g: S, M, L or 42, 44"
     )
+    # Optional logistics data. Existing products remain valid without these
+    # values; national shipping eligibility is evaluated in the shipping stage.
+    weight_grams = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1)],
+        help_text="Product weight in grams, excluding packaging.",
+    )
+    length_cm = models.DecimalField(
+        max_digits=7,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.01"))],
+        help_text="Product length in centimetres.",
+    )
+    width_cm = models.DecimalField(
+        max_digits=7,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.01"))],
+        help_text="Product width in centimetres.",
+    )
+    height_cm = models.DecimalField(
+        max_digits=7,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.01"))],
+        help_text="Product height in centimetres.",
+    )
 
     # Inventory
     stock_quantity = models.PositiveIntegerField(default=0)
@@ -678,6 +710,7 @@ class Store(models.Model):
             # values so a new store accepts orders without a manual step
             # (online-sales foundation).
             StoreCommerceSettings.objects.create(store=store)
+            StoreShippingSettings.objects.create(store=store)
         return store
 
 
@@ -1653,6 +1686,95 @@ class StoreCommerceSettings(models.Model):
 
         if errors:
             raise ValidationError(errors)
+
+
+class StoreShippingSettings(models.Model):
+    """Per-store origin and package configuration for the shipping roadmap.
+
+    National shipping is deliberately disabled by default. This model only
+    stores logistics configuration; it does not call a carrier or change the
+    existing fixed-fee local delivery flow.
+    """
+
+    store = models.OneToOneField(
+        Store,
+        on_delete=models.CASCADE,
+        related_name="shipping_settings",
+    )
+    national_shipping_enabled = models.BooleanField(
+        default=False,
+        help_text="Enables national-shipping features for this store when implemented.",
+    )
+    origin_postal_code = models.CharField(
+        max_length=8,
+        blank=True,
+        default="",
+        validators=[
+            RegexValidator(
+                regex=r"^\\d{8}$",
+                message="Informe o CEP de origem com 8 digitos.",
+            )
+        ],
+        help_text="CEP de origem com 8 digitos, somente numeros.",
+    )
+    packaging_weight_grams = models.PositiveIntegerField(
+        default=0,
+        help_text="Peso adicional padrao da embalagem, em gramas.",
+    )
+    package_options = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "Lista de caixas: name, length_cm, width_cm, height_cm e "
+            "tare_weight_grams. Medidas em centimetros."
+        ),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Store shipping settings"
+        verbose_name_plural = "Store shipping settings"
+
+    def clean(self) -> None:
+        super().clean()
+        errors = {}
+        if self.origin_postal_code and not re.fullmatch(r"\\d{8}", self.origin_postal_code):
+            errors["origin_postal_code"] = "Informe o CEP de origem com 8 digitos."
+        if not isinstance(self.package_options, list):
+            errors["package_options"] = "As embalagens devem ser informadas em uma lista."
+        else:
+            for index, option in enumerate(self.package_options):
+                if not isinstance(option, dict):
+                    errors["package_options"] = f"Embalagem {index + 1} invalida."
+                    break
+                required = ("name", "length_cm", "width_cm", "height_cm")
+                if any(key not in option for key in required):
+                    errors["package_options"] = (
+                        f"Embalagem {index + 1}: informe nome, comprimento, largura e altura."
+                    )
+                    break
+                try:
+                    if any(Decimal(str(option[key])) <= 0 for key in required[1:]):
+                        raise InvalidOperation
+                    tare_weight = int(option.get("tare_weight_grams", 0))
+                    if tare_weight < 0:
+                        raise ValueError
+                except (InvalidOperation, TypeError, ValueError):
+                    errors["package_options"] = (
+                        f"Embalagem {index + 1}: medidas devem ser positivas e peso nao negativo."
+                    )
+                    break
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self) -> str:
+        return f"Shipping settings for {self.store_id}"
+
+    @classmethod
+    def get_for_store(cls, store: "Store") -> "StoreShippingSettings":
+        instance, _created = cls.objects.get_or_create(store=store)
+        return instance
 
 
 class BotConversation(models.Model):
