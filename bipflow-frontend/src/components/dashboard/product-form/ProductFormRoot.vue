@@ -6,6 +6,7 @@ import IdentitySection from '@/components/dashboard/product-form/sections/Identi
 import ValuationSection from '@/components/dashboard/product-form/sections/ValuationSection.vue';
 import MediaSection from '@/components/dashboard/product-form/sections/MediaSection.vue';
 import ProductVariantsSection from '@/components/dashboard/product-form/sections/ProductVariantsSection.vue';
+import ShippingDimensionsSection from '@/components/dashboard/product-form/sections/ShippingDimensionsSection.vue';
 import { useDialogA11y } from '@/composables/useDialogA11y';
 
 interface Props {
@@ -46,6 +47,10 @@ type ProductFormState = {
   images: ProductFormData['images'];
   variants: ProductFormData['variants'];
   description: string;
+  weight_grams: number | null;
+  length_cm: number | null;
+  width_cm: number | null;
+  height_cm: number | null;
   is_available?: boolean;
 };
 
@@ -60,11 +65,21 @@ const createEmptyForm = (): ProductFormState => ({
   images: [],
   variants: [],
   description: '',
+  weight_grams: null,
+  length_cm: null,
+  width_cm: null,
+  height_cm: null,
 });
 
 const toNumberOrZero = (value: unknown): number => {
   const numericValue = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(numericValue) ? numericValue : 0;
+};
+
+const toOptionalNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') return null;
+  const numericValue = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
 };
 
 const resolveCategoryId = (
@@ -122,6 +137,10 @@ const normalizeInitialFormData = (
     images: galleryImages.slice(0, 2),
     variants,
     description: product.description ?? '',
+    weight_grams: toOptionalNumber(product.weight_grams),
+    length_cm: toOptionalNumber(product.length_cm),
+    width_cm: toOptionalNumber(product.width_cm),
+    height_cm: toOptionalNumber(product.height_cm),
     is_available: product.is_available ?? true,
   };
 };
@@ -252,6 +271,14 @@ const submitLabel = computed(() => {
             v-model:variants="form.variants"
             :base-price="form.price"
             :error="errors.variants?.[0]"
+          />
+
+          <ShippingDimensionsSection
+            v-model:weight-grams="form.weight_grams"
+            v-model:length-cm="form.length_cm"
+            v-model:width-cm="form.width_cm"
+            v-model:height-cm="form.height_cm"
+            :errors="errors"
           />
         </form>
 
