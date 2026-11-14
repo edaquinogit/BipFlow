@@ -10,6 +10,7 @@ import { deliveryRegionService } from '@/services/delivery-region.service';
 import { Logger } from '@/services/logger';
 import { buildErrorContext, type ApplicationError } from '@/types/errors';
 import { formatBRL } from '@/utils/formatters';
+import ShippingLogisticsSettingsPanel from '@/components/dashboard/settings/ShippingLogisticsSettingsPanel.vue';
 
 const { canManageCatalog } = useCurrentUser();
 const { success, error: toastError } = useToast();
@@ -114,7 +115,9 @@ useStoreSwitchEffect(() => {
 </script>
 
 <template>
-  <section class="grid gap-6 lg:grid-cols-[minmax(0,360px)_1fr]">
+  <div class="space-y-6">
+    <ShippingLogisticsSettingsPanel />
+    <section class="grid gap-6 lg:grid-cols-[minmax(0,360px)_1fr]">
     <form v-if="canManageCatalog" class="space-y-3 rounded-lg border border-[#E5E7EB] bg-white p-4" @submit.prevent="submitDeliveryRegion">
       <label class="block">
         <span class="mb-2 block text-[10px] font-black uppercase tracking-widest text-bip-muted">Região</span>
@@ -223,5 +226,6 @@ useStoreSwitchEffect(() => {
         </div>
       </article>
     </div>
-  </section>
+    </section>
+  </div>
 </template>
