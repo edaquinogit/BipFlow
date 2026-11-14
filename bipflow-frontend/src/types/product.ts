@@ -48,6 +48,10 @@ export interface Product {
   description?: string | null
   price: string
   size?: string | null
+  weight_grams?: number | null
+  length_cm?: string | number | null
+  width_cm?: string | number | null
+  height_cm?: string | number | null
   category: ProductCategory
   image: string | null
   images?: string[]
@@ -231,6 +235,10 @@ export const ProductSchema = z.object({
   description: z.string().nullable().optional(),
   price: z.union([z.string(), z.number()]).transform((value) => String(value)),
   size: z.string().nullable().optional(),
+  weight_grams: z.number().int().positive().nullable().optional(),
+  length_cm: z.union([z.string(), z.number()]).nullable().optional(),
+  width_cm: z.union([z.string(), z.number()]).nullable().optional(),
+  height_cm: z.union([z.string(), z.number()]).nullable().optional(),
   category: ProductCategorySchema,
   image: z.string().url().nullable(),
   images: z.array(z.string().url()).optional().default([]),
