@@ -2219,7 +2219,7 @@ class StoreShippingSettingsSerializer(serializers.ModelSerializer):
         ]
 
     def validate_origin_postal_code(self, value: str) -> str:
-        digits = re.sub(r"\\D", "", value)
+        digits = re.sub(r"\D", "", value)
         if digits and len(digits) != 8:
             raise serializers.ValidationError("Informe um CEP valido com 8 digitos.")
         return digits
