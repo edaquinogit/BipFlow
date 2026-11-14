@@ -107,6 +107,20 @@ const LowStockThresholdSchema = z.preprocess(
     .nullable(),
 );
 
+const OptionalPositiveDimensionSchema = z.preprocess(
+  (value) => (value === "" || value === undefined ? null : value),
+  z.coerce.number().positive("A dimensão deve ser maior que zero").nullable(),
+);
+
+const OptionalPositiveWeightSchema = z.preprocess(
+  (value) => (value === "" || value === undefined ? null : value),
+  z.coerce
+    .number()
+    .int("O peso deve ser informado em gramas inteiras")
+    .positive("O peso deve ser maior que zero")
+    .nullable(),
+);
+
 const productBase = {
   name: z
     .string()
@@ -140,6 +154,11 @@ const productBase = {
 
   is_available: z.boolean().default(true),
   size: z.string().nullable().optional(),
+  // Optional until the merchant has measured each item for national shipping.
+  weight_grams: OptionalPositiveWeightSchema,
+  length_cm: OptionalPositiveDimensionSchema,
+  width_cm: OptionalPositiveDimensionSchema,
+  height_cm: OptionalPositiveDimensionSchema,
 
   /**
    * 🛡️ ASSET MEDIA GUARD (2MB Limit)
@@ -249,4 +268,8 @@ export const createEmptyProduct = (): ProductFormDraft => ({
   images: [],
   variants: [],
   description: "",
+  weight_grams: null,
+  length_cm: null,
+  width_cm: null,
+  height_cm: null,
 });
