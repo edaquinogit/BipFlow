@@ -24,6 +24,7 @@ from .views import (
     StockMovementViewSet,
     StoreAppearanceSettingsView,
     StoreCommerceSettingsView,
+    StoreShippingSettingsView,
     StorefrontBannerDetailView,
     StorefrontBannerListView,
     StorefrontBannerReorderView,
@@ -67,6 +68,11 @@ urlpatterns = [
         "store/current/commerce-settings/",
         StoreCommerceSettingsView.as_view(),
         name="store-current-commerce-settings",
+    ),
+    path(
+        "store/current/shipping-settings/",
+        StoreShippingSettingsView.as_view(),
+        name="store-current-shipping-settings",
     ),
     path(
         "store/current/appearance/",
