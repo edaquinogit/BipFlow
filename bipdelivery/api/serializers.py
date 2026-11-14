@@ -42,6 +42,7 @@ from .models import (
     StockMovement,
     Store,
     StoreCommerceSettings,
+    StoreShippingSettings,
     StorefrontBanner,
     StorefrontDestination,
     StorefrontAppearance,
@@ -2183,6 +2184,79 @@ class StoreCommerceSettingsSerializer(serializers.ModelSerializer):
 
         _validate_commerce_invariants(merged)
         return attrs
+
+
+class StoreShippingSettingsSerializer(serializers.ModelSerializer):
+    """Dashboard configuration for one store's shipping origin and packages."""
+
+    origin_postal_code = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=9,
+        trim_whitespace=True,
+    )
+    packaging_weight_grams = serializers.IntegerField(min_value=0, required=False)
+    package_options = serializers.JSONField(required=False)
+
+    class Meta:
+        model = StoreShippingSettings
+        fields = [
+            "national_shipping_enabled",
+            "origin_postal_code",
+            "packaging_weight_grams",
+            "package_options",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["created_at", "updated_at"]
+
+    def validate_origin_postal_code(self, value: str) -> str:
+        digits = re.sub(r"\\D", "", value)
+        if digits and len(digits) != 8:
+            raise serializers.ValidationError("Informe um CEP valido com 8 digitos.")
+        return digits
+
+    def validate_package_options(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Informe uma lista de embalagens.")
+        if len(value) > 20:
+            raise serializers.ValidationError("Cadastre no maximo 20 tipos de embalagem.")
+
+        normalized = []
+        for index, option in enumerate(value):
+            if not isinstance(option, dict):
+                raise serializers.ValidationError(f"Embalagem {index + 1} invalida.")
+            name = str(option.get("name", "")).strip()
+            if not name or len(name) > 80:
+                raise serializers.ValidationError(
+                    f"Embalagem {index + 1}: informe um nome de ate 80 caracteres."
+                )
+            item = {"name": name}
+            for field in ("length_cm", "width_cm", "height_cm"):
+                try:
+                    number = Decimal(str(option.get(field)))
+                except (InvalidOperation, TypeError, ValueError):
+                    raise serializers.ValidationError(
+                        f"Embalagem {index + 1}: {field} deve ser numerico."
+                    )
+                if not number.is_finite() or number <= 0:
+                    raise serializers.ValidationError(
+                        f"Embalagem {index + 1}: {field} deve ser maior que zero."
+                    )
+                item[field] = float(number)
+            try:
+                tare_weight = int(option.get("tare_weight_grams", 0))
+            except (TypeError, ValueError):
+                raise serializers.ValidationError(
+                    f"Embalagem {index + 1}: peso da embalagem invalido."
+                )
+            if tare_weight < 0:
+                raise serializers.ValidationError(
+                    f"Embalagem {index + 1}: peso nao pode ser negativo."
+                )
+            item["tare_weight_grams"] = tare_weight
+            normalized.append(item)
+        return normalized
 
 
 class PublicStoreCommerceSettingsSerializer(serializers.ModelSerializer):
