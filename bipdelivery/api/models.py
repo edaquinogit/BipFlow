@@ -1755,11 +1755,22 @@ class StoreShippingSettings(models.Model):
                         f"Embalagem {index + 1}: informe nome, comprimento, largura e altura."
                     )
                     break
+                name = str(option.get("name", "")).strip()
+                if not name or len(name) > 80:
+                    errors["package_options"] = (
+                        f"Embalagem {index + 1}: informe um nome de ate 80 caracteres."
+                    )
+                    break
                 try:
-                    if any(Decimal(str(option[key])) <= 0 for key in required[1:]):
+                    dimensions = [Decimal(str(option[key])) for key in required[1:]]
+                    if any(not value.is_finite() or value <= 0 for value in dimensions):
                         raise InvalidOperation
-                    tare_weight = int(option.get("tare_weight_grams", 0))
-                    if tare_weight < 0:
+                    tare_weight = Decimal(str(option.get("tare_weight_grams", 0)))
+                    if (
+                        not tare_weight.is_finite()
+                        or tare_weight < 0
+                        or tare_weight != tare_weight.to_integral_value()
+                    ):
                         raise ValueError
                 except (InvalidOperation, TypeError, ValueError):
                     errors["package_options"] = (
