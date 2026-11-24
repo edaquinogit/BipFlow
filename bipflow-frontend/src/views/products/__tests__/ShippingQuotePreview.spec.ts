@@ -40,7 +40,7 @@ describe('ShippingQuotePreview', () => {
     expect(post).toHaveBeenCalledWith('v1/public/stores/a/shipping-quotes/', {
       destination_postal_code: '49010000', items: [{ product_id: 1, quantity: 2 }],
     })
-    await wrapper.get('input[type=radio]').setValue(true)
+    await wrapper.get('input[type=radio]').setValue()
     expect(wrapper.text()).toContain('não altera o pedido')
     await wrapper.get('input').setValue('40010000')
     expect(wrapper.find('input[type=radio]').exists()).toBe(false)
