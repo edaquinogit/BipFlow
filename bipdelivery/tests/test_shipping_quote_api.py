@@ -1,10 +1,13 @@
 from django.test import TestCase
+from django.core.cache import cache
 from rest_framework.test import APIClient
 from bipdelivery.api.models import Store, Category, Product, StoreShippingSettings
 
 
 class ShippingQuoteApiTests(TestCase):
     def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
         self.client = APIClient()
         self.store = Store.objects.create(name="Quote A", slug="api-quote-a")
         self.other = Store.objects.create(name="Quote B", slug="api-quote-b")
