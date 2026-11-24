@@ -32,22 +32,24 @@ const error = ref('')
 const endpoint = computed(() => 'v1/public/stores/' + encodeURIComponent(props.storeSlug) + '/shipping-quotes/')
 const items = computed(() => props.items.map(item => ({ product_id: item.product.id, quantity: item.quantity })))
 let revision = 0
+let availabilityRevision = 0
 watch([cep, items, endpoint], () => {
   revision += 1
   quotes.value = []
   selected.value = ''
   error.value = ''
   loading.value = false
-})
+}, { flush: 'sync' })
 watch(endpoint, async (url) => {
+  const current = ++availabilityRevision
   enabled.value = false
   try {
     const response = await api.get<{ enabled: boolean }>(url)
-    if (endpoint.value === url) enabled.value = response.data?.enabled === true
+    if (current === availabilityRevision && endpoint.value === url) enabled.value = response.data?.enabled === true
   } catch {
     // Disabled or unavailable: preserve the existing checkout.
   }
-}, { immediate: true })
+}, { immediate: true, flush: 'sync' })
 async function calculate() {
   if (!enabled.value || loading.value) return
   const current = ++revision
@@ -59,7 +61,7 @@ async function calculate() {
     const response = await api.post<{ simulated: boolean; quotes: Quote[] }>(endpoint.value, {
       destination_postal_code: cep.value, items: items.value,
     })
-    if (current === revision && response.data.simulated) quotes.value = response.data.quotes
+    if (current === revision && enabled.value && response.data.simulated && Array.isArray(response.data.quotes)) quotes.value = response.data.quotes
   } catch {
     if (current === revision) error.value = 'Não foi possível simular o frete. Confira o CEP e os produtos.'
   } finally {
