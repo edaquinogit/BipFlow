@@ -2253,8 +2253,13 @@ class StoreShippingSettingsSerializer(serializers.ModelSerializer):
                     )
                 item[field] = float(number)
             try:
-                tare_weight = int(option.get("tare_weight_grams", 0))
-            except (TypeError, ValueError):
+                tare_weight = Decimal(str(option.get("tare_weight_grams", 0)))
+                if (
+                    not tare_weight.is_finite()
+                    or tare_weight != tare_weight.to_integral_value()
+                ):
+                    raise ValueError
+            except (InvalidOperation, TypeError, ValueError):
                 raise serializers.ValidationError(
                     f"Embalagem {index + 1}: peso da embalagem invalido."
                 )
@@ -2262,7 +2267,7 @@ class StoreShippingSettingsSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     f"Embalagem {index + 1}: peso nao pode ser negativo."
                 )
-            item["tare_weight_grams"] = tare_weight
+            item["tare_weight_grams"] = int(tare_weight)
             normalized.append(item)
         return normalized
 
