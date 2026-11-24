@@ -69,6 +69,28 @@ class ShippingLogisticsFoundationTests(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn("package_options", serializer.errors)
 
+    def test_settings_serializer_rejects_invalid_tare_weights(self):
+        settings_row = StoreShippingSettings.get_for_store(self.store_a)
+        for weight in (1.5, -0.5, -1, "NaN", "Infinity", True, None):
+            with self.subTest(weight=weight):
+                serializer = StoreShippingSettingsSerializer(
+                    settings_row,
+                    data={
+                        "package_options": [
+                            {
+                                "name": "Caixa",
+                                "length_cm": 20,
+                                "width_cm": 15,
+                                "height_cm": 10,
+                                "tare_weight_grams": weight,
+                            }
+                        ]
+                    },
+                    partial=True,
+                )
+                self.assertFalse(serializer.is_valid())
+                self.assertIn("package_options", serializer.errors)
+
     def test_existing_products_can_keep_logistics_fields_empty(self):
         category = Category.objects.create(store=self.store_a, name="Geral")
         product = Product.objects.create(
