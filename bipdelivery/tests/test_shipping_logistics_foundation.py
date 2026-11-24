@@ -1,6 +1,8 @@
+from django.contrib.auth import get_user_model
 from django.test import TestCase
+from rest_framework.test import APIClient
 
-from bipdelivery.api.models import Category, Product, Store, StoreShippingSettings
+from bipdelivery.api.models import Category, Product, Store, StoreMembership, StoreShippingSettings
 from bipdelivery.api.serializers import ProductSerializer, StoreShippingSettingsSerializer
 
 
@@ -110,3 +112,75 @@ class ShippingLogisticsFoundationTests(TestCase):
         self.assertIsNone(payload["length_cm"])
         self.assertIsNone(payload["width_cm"])
         self.assertIsNone(payload["height_cm"])
+
+
+class ShippingSettingsApiIsolationTests(TestCase):
+    url = "/api/v1/store/current/shipping-settings/"
+
+    def setUp(self):
+        self.store_a = Store.get_default()
+        self.store_b = Store.objects.create(name="Loja B", slug="shipping-loja-b")
+        self.settings_a = StoreShippingSettings.get_for_store(self.store_a)
+        self.settings_b = StoreShippingSettings.get_for_store(self.store_b)
+        self.settings_a.origin_postal_code = "40010000"
+        self.settings_a.save()
+        self.settings_b.origin_postal_code = "49010000"
+        self.settings_b.save()
+        self.client = APIClient()
+
+    def authenticate(self, role, claim=None):
+        user = get_user_model().objects.create_user(username=f"shipping-{role}")
+        StoreMembership.objects.create(store=self.store_a, user=user, role=role)
+        self.client.force_authenticate(
+            user=user, token={"store_id": claim or self.store_a.pk}
+        )
+
+    def test_anonymous_cannot_read_or_write(self):
+        self.assertEqual(self.client.get(self.url).status_code, 401)
+        self.assertEqual(self.client.patch(self.url, {}, format="json").status_code, 401)
+
+    def test_owner_cannot_read_or_modify_foreign_store_via_header(self):
+        self.authenticate(StoreMembership.ROLE_OWNER)
+        header = {"HTTP_X_STORE_SLUG": self.store_b.slug}
+        response = self.client.get(self.url, **header)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["origin_postal_code"], "40010000")
+        response = self.client.patch(
+            self.url, {"origin_postal_code": "50010000", "store": self.store_b.pk},
+            format="json", **header,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.settings_a.refresh_from_db()
+        self.settings_b.refresh_from_db()
+        self.assertEqual(self.settings_a.origin_postal_code, "50010000")
+        self.assertEqual(self.settings_b.origin_postal_code, "49010000")
+
+    def test_foreign_claim_is_denied(self):
+        self.authenticate(StoreMembership.ROLE_OWNER, claim=self.store_b.pk)
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+        self.assertEqual(self.client.patch(self.url, {}, format="json").status_code, 403)
+
+    def test_viewer_can_read_but_cannot_edit(self):
+        self.authenticate(StoreMembership.ROLE_VIEWER)
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+        response = self.client.patch(
+            self.url, {"origin_postal_code": "50010000"}, format="json"
+        )
+        self.assertEqual(response.status_code, 403)
+        self.settings_a.refresh_from_db()
+        self.assertEqual(self.settings_a.origin_postal_code, "40010000")
+
+    def test_manager_can_edit_own_store(self):
+        self.authenticate(StoreMembership.ROLE_MANAGER)
+        response = self.client.patch(
+            self.url, {"origin_postal_code": "50010000"}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.settings_a.refresh_from_db()
+        self.assertEqual(self.settings_a.origin_postal_code, "50010000")
+
+    def test_non_member_cannot_access_settings(self):
+        user = get_user_model().objects.create_user(username="shipping-customer")
+        self.client.force_authenticate(user=user)
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+        self.assertEqual(self.client.patch(self.url, {}, format="json").status_code, 403)
