@@ -1,8 +1,21 @@
+from decimal import Decimal
+
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
+from django.test import TestCase, TransactionTestCase
 from rest_framework.test import APIClient
 
-from bipdelivery.api.models import Category, Product, Store, StoreMembership, StoreShippingSettings
+from bipdelivery.api.models import (
+    Category,
+    CustomerProfile,
+    DeliveryRegion,
+    Product,
+    SaleOrder,
+    Store,
+    StoreMembership,
+    StoreShippingSettings,
+)
 from bipdelivery.api.serializers import ProductSerializer, StoreShippingSettingsSerializer
 
 
@@ -184,3 +197,101 @@ class ShippingSettingsApiIsolationTests(TestCase):
         self.client.force_authenticate(user=user)
         self.assertEqual(self.client.get(self.url).status_code, 403)
         self.assertEqual(self.client.patch(self.url, {}, format="json").status_code, 403)
+
+
+class ShippingMigrationTests(TransactionTestCase):
+    before = ("api", "0051_saleorder_payment_lifecycle")
+    after = ("api", "0052_shipping_logistics_foundation")
+
+    def migrate(self, target):
+        executor = MigrationExecutor(connection)
+        executor.migrate([target])
+        return executor.loader.project_state([target]).apps
+
+    def test_forward_and_reverse_preserve_catalog_and_local_fees(self):
+        self.addCleanup(self.migrate, self.after)
+        old = self.migrate(self.before)
+        store = old.get_model("api", "Store").objects.create(
+            name="Migration store", slug="shipping-migration"
+        )
+        category = old.get_model("api", "Category").objects.create(
+            store_id=store.pk, name="General"
+        )
+        product = old.get_model("api", "Product").objects.create(
+            store_id=store.pk, category_id=category.pk, name="Legacy", price="20.00"
+        )
+        region = old.get_model("api", "DeliveryRegion").objects.create(
+            store_id=store.pk, name="Centro", delivery_fee="7.50"
+        )
+
+        new = self.migrate(self.after)
+        settings_model = new.get_model("api", "StoreShippingSettings")
+        self.assertEqual(
+            settings_model.objects.count(), new.get_model("api", "Store").objects.count()
+        )
+        settings_row = settings_model.objects.get(store_id=store.pk)
+        self.assertFalse(settings_row.national_shipping_enabled)
+        self.assertEqual(settings_row.package_options, [])
+        migrated = new.get_model("api", "Product").objects.get(pk=product.pk)
+        for field in ("weight_grams", "length_cm", "width_cm", "height_cm"):
+            self.assertIsNone(getattr(migrated, field))
+        self.assertEqual(migrated.price, Decimal("20.00"))
+        self.assertEqual(
+            new.get_model("api", "DeliveryRegion").objects.get(pk=region.pk).delivery_fee,
+            Decimal("7.50"),
+        )
+
+        old = self.migrate(self.before)
+        self.assertEqual(
+            old.get_model("api", "Product").objects.get(pk=product.pk).price,
+            Decimal("20.00"),
+        )
+        self.assertEqual(
+            old.get_model("api", "DeliveryRegion").objects.get(pk=region.pk).delivery_fee,
+            Decimal("7.50"),
+        )
+        self.assertNotIn("api_storeshippingsettings", connection.introspection.table_names())
+
+
+class LocalShippingCheckoutTests(TestCase):
+    def test_local_checkout_uses_region_fee_without_product_dimensions(self):
+        store = Store.objects.create(
+            name="Local store", slug="shipping-local", whatsapp_phone="5571999999999"
+        )
+        category = Category.objects.create(store=store, name="General")
+        product = Product.objects.create(
+            store=store, category=category, name="Legacy", price="20.00", stock_quantity=5
+        )
+        region = DeliveryRegion.objects.create(
+            store=store, name="Centro", delivery_fee="7.50"
+        )
+        shipping = StoreShippingSettings.get_for_store(store)
+        self.assertFalse(shipping.national_shipping_enabled)
+        user = get_user_model().objects.create_user(username="local-shipping-customer")
+        CustomerProfile.objects.create(
+            user=user, store=store, full_name="Cliente Teste", phone="71999999999"
+        )
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.post(
+            "/api/v1/checkout/whatsapp/",
+            {
+                "items": [{"product_id": product.pk, "quantity": 2}],
+                "customer": {
+                    "delivery_method": "delivery",
+                    "payment_method": "pix",
+                    "delivery_region_id": region.pk,
+                    "address": "Rua Teste, 10",
+                    "neighborhood": "Centro",
+                    "city": "Salvador",
+                    "delivery_fee": "0.00",
+                },
+            },
+            format="json",
+            HTTP_X_STORE_SLUG=store.slug,
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        order = SaleOrder.objects.get(store=store)
+        self.assertEqual(order.subtotal, Decimal("40.00"))
+        self.assertEqual(order.delivery_fee, Decimal("7.50"))
+        self.assertEqual(order.total, Decimal("47.50"))
