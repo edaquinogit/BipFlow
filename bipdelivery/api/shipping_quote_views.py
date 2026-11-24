@@ -13,6 +13,12 @@ class ShippingQuoteView(APIView):
     permission_classes = []
     throttle_classes = [CheckoutIpThrottle]
 
+    def get(self, request, slug):
+        enabled = StoreShippingSettings.objects.filter(
+            store__slug=slug, store__is_active=True, national_shipping_enabled=True
+        ).exists()
+        return Response({"enabled": enabled})
+
     def post(self, request, slug):
         store = Store.objects.filter(slug=slug, is_active=True).first()
         if store is None or not StoreShippingSettings.objects.filter(
