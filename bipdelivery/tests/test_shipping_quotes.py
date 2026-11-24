@@ -53,11 +53,11 @@ class SimulatedShippingTests(TestCase):
 
     def test_duplicate_items_are_aggregated_and_larger_box_selected(self):
         parcel, quotes = self.quote([
-            {"product_id": self.product.pk, "quantity": 3},
-            {"product_id": self.product.pk, "quantity": 3},
+            {"product_id": self.product.pk, "quantity": 4},
+            {"product_id": self.product.pk, "quantity": 4},
         ])
         self.assertEqual(parcel.name, "large")
-        self.assertEqual(parcel.weight_grams, 1450)
+        self.assertEqual(parcel.weight_grams, 1850)
         self.assertEqual(quotes[0].billable_grams, 4000)
 
     def test_cep_zone_and_configurable_rates(self):
