@@ -196,6 +196,12 @@
               <span class="font-normal text-[var(--store-text-muted)]">· {{ itemCount }} {{ itemCount === 1 ? 'item' : 'itens' }}</span>
             </h3>
 
+            <ShippingQuotePreview
+              v-if="typeof route.params?.storeSlug === 'string'"
+              :store-slug="route.params.storeSlug"
+              :items="items"
+            />
+
             <!-- Compact, secondary financial summary -- Produtos/Frete moved out of
                  the footer so it stops competing with the CTA for vertical space.
                  Reuses the same reactive subtotal/deliveryFee props as the footer;
@@ -558,6 +564,7 @@ import { useDialogA11y } from '@/composables/useDialogA11y'
 import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useStorefrontOverlay } from '@/composables/useStorefrontOverlay'
 import { getCartItemKey } from '@/composables/useCart'
+import ShippingQuotePreview from './ShippingQuotePreview.vue'
 
 const fallbackImageUrl = `data:image/svg+xml;utf8,${encodeURIComponent(`
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
