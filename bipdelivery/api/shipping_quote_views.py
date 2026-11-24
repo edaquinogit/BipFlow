@@ -8,10 +8,15 @@ from .shipping_quotes import ShippingQuoteError, simulate_shipping
 from .throttling import CheckoutIpThrottle
 
 
+class ShippingQuoteIpThrottle(CheckoutIpThrottle):
+    scope = "shipping_quote_ip"
+    rate = "30/min"
+
+
 class ShippingQuoteView(APIView):
     authentication_classes = []
     permission_classes = []
-    throttle_classes = [CheckoutIpThrottle]
+    throttle_classes = [ShippingQuoteIpThrottle]
 
     def get(self, request, slug):
         enabled = StoreShippingSettings.objects.filter(
