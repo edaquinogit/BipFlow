@@ -3027,6 +3027,8 @@ class CheckoutWhatsAppView(APIView):
                 customer,
             ),
         }
+        if "national_shipping" in validated_data:
+            canonical_payload["national_shipping"] = validated_data["national_shipping"]
         encoded_payload = json.dumps(
             canonical_payload,
             sort_keys=True,
@@ -3329,6 +3331,7 @@ class CheckoutWhatsAppView(APIView):
         cart_items = validated_data["items"]
         customer = validated_data["customer"]
         is_delivery = customer["delivery_method"] == "delivery"
+        national_shipping = validated_data.get("national_shipping")
         whatsapp_phone = store.get_configured_whatsapp_phone()
         if not whatsapp_phone:
             logger.warning(
@@ -3390,7 +3393,8 @@ class CheckoutWhatsAppView(APIView):
                         "A regiao de entrega selecionada nao esta disponivel nesta loja.",
                     ).response
             elif (
-                profile is not None
+                national_shipping is None
+                and profile is not None
                 and profile.delivery_region_id
                 and profile.delivery_region.is_active
             ):
@@ -3449,7 +3453,24 @@ class CheckoutWhatsAppView(APIView):
                 )
 
                 delivery_fee = Decimal("0.00")
-                if is_delivery:
+                shipping_snapshot = {}
+                if national_shipping is not None:
+                    from .shipping_confirmation import confirm_shipping
+                    from .shipping_quotes import ShippingQuoteError
+
+                    if not getattr(settings, "BIPFLOW_SIMULATED_NATIONAL_CHECKOUT", False):
+                        raise _CheckoutCommerceError("national_shipping_unavailable", "Frete nacional indisponivel.")
+                    try:
+                        delivery_fee, shipping_snapshot = confirm_shipping(
+                            store=store, items=cart_items,
+                            destination=national_shipping["destination_postal_code"],
+                            service=national_shipping["service"],
+                        )
+                    except ShippingQuoteError as exc:
+                        raise _CheckoutCommerceError("national_shipping_unavailable", "Nao foi possivel confirmar o frete.") from exc
+                    if delivery_fee != national_shipping["expected_price"]:
+                        raise _CheckoutCommerceError("shipping_quote_changed", "Cotacao alterada. Simule novamente.")
+                elif is_delivery:
                     delivery_fee = (
                         Decimal(delivery_region.delivery_fee)
                         if delivery_region is not None
@@ -3457,7 +3478,7 @@ class CheckoutWhatsAppView(APIView):
                     )
                 total = subtotal + delivery_fee
 
-                if is_delivery:
+                if is_delivery and national_shipping is None:
                     self._sync_profile_checkout_defaults(
                         profile,
                         address=order_address,
@@ -3502,6 +3523,12 @@ class CheckoutWhatsAppView(APIView):
                         ]
                     )
 
+                if shipping_snapshot:
+                    message_lines.extend([
+                        f'CEP: {shipping_snapshot["destination_postal_code"]}',
+                        f'Frete simulado: {shipping_snapshot["service"]}',
+                        shipping_snapshot["notice"],
+                    ])
                 if notes:
                     message_lines.append(f"Observacoes: {notes}")
 
@@ -3527,6 +3554,7 @@ class CheckoutWhatsAppView(APIView):
                     neighborhood=order_neighborhood,
                     city=order_city,
                     notes=notes,
+                    shipping_snapshot=shipping_snapshot,
                     subtotal=subtotal.quantize(Decimal("0.01")),
                     delivery_fee=delivery_fee.quantize(Decimal("0.01")),
                     total=total.quantize(Decimal("0.01")),
