@@ -2033,6 +2033,7 @@ class SaleOrder(models.Model):
     delivery_region_name = models.CharField(max_length=120, blank=True)
     notes = models.TextField(blank=True)
 
+    shipping_snapshot = models.JSONField(default=dict, blank=True)
     subtotal = models.DecimalField(max_digits=10, decimal_places=2)
     delivery_fee = models.DecimalField(max_digits=10, decimal_places=2)
     total = models.DecimalField(max_digits=10, decimal_places=2)
