@@ -31,7 +31,7 @@ class NationalShippingCheckoutTests(TestCase):
                          "address": "Rua Teste 10", "neighborhood": "Centro",
                          "city": "Aracaju"},
             "national_shipping": {"destination_postal_code": "49010000",
-                                  "service": "economico_simulado",
+                                  "service": "economico_simulado", "state": "SE",
                                   "expected_price": "16.00"},
         }
 
@@ -76,3 +76,30 @@ class NationalShippingCheckoutTests(TestCase):
         self.config.save()
         self.assertEqual(self.checkout().status_code, 422)
         self.assert_no_sale()
+
+    @override_settings(BIPFLOW_SIMULATED_NATIONAL_CHECKOUT=True)
+    def test_invalid_state_rejected(self):
+        self.payload["national_shipping"]["state"] = "XX"
+        self.assertEqual(self.checkout().status_code, 400)
+        self.assert_no_sale()
+
+    @override_settings(BIPFLOW_SIMULATED_NATIONAL_CHECKOUT=True)
+    def test_foreign_product_rejected(self):
+        other = Store.objects.create(name="Other", slug="national-other")
+        category = Category.objects.create(store=other, name="General")
+        foreign = Product.objects.create(store=other, category=category, name="Foreign",
+                                         price=10, stock_quantity=5)
+        self.payload["items"][0]["product_id"] = foreign.pk
+        self.assertEqual(self.checkout().status_code, 400)
+        self.assert_no_sale()
+        foreign.refresh_from_db()
+        self.assertEqual(foreign.stock_quantity, 5)
+
+    @override_settings(BIPFLOW_SIMULATED_NATIONAL_CHECKOUT=True)
+    def test_idempotent_retry_does_not_reserve_twice(self):
+        self.payload["idempotency_key"] = "national-test-retry"
+        self.assertEqual(self.checkout().status_code, 200)
+        self.assertEqual(self.checkout().status_code, 200)
+        self.assertEqual(SaleOrder.objects.filter(store=self.store).count(), 1)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_quantity, 4)
