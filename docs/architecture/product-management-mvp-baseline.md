@@ -1,0 +1,36 @@
+# Product Management MVP — ADR e baseline (issue #27, etapa 1.0)
+
+Status: proposta arquitetural registrada; política comercial pendente de aprovação; testes de referência pendentes de execução. Baseline main: 66f67f4379af28852171494405dc4d48e2cf94d0. PR #26: 9ef926ba790e00df519eb7b65b85b69474ffd14f (não incorporada). Nenhuma alteração de runtime, schema ou feature flags nesta etapa.
+
+## Contratos atuais verificados
+- Product.price Decimal(10,2); ProductVariant.price nullable, zero explícito distinto de null. Product.get_effective_price(variant) é autoridade de cálculo nos dois canais: CheckoutWhatsAppView em views.py e PdvSaleView em pdv.py. ProductVariantSerializer.get_effective_price tem fallback próprio com contexto variant_base_price para evitar N+1: futura evolução deve preservar paridade, sem duplicar regras.
+- ProductViewSet (AllowAnyReadDashboardWrite + StoreScopedViewSetMixin) lista/detalha por ID/slug/código, filtros search/category/in_stock/min_price/max_price. Categoria restringida à loja pelo ProductSerializer. Filtros de preço usam Product.price e float; podem divergir da vitrine com variantes. Não corrigir nesta etapa.
+- ProductSerializer: category ID, image, images (leitura), uploaded_images/existing_images e variantes_payload (nome real: variants_payload, JSON write-only). Multipart indexado via useProducts.ts; lista completa de variantes quando fornecida; omissão preserva lista; price omitido preserva override, null/"" limpa, 0 válido. O frontend atual normaliza price ausente para null ao montar a lista: avaliar clientes stale. _sync_variants bloqueia produto e variantes, rejeita IDs externos, exclui variantes omitidas; risco histórico e de edições concorrentes. Não modificar comportamento até etapa 3/4.
+- Checkout POST /api/v1/checkout/whatsapp/: items product_id/variant_id/quantity, customer, idempotency_key opcional; preço enviado não é autoridade. PDV POST /api/v1/pdv/sales/ resolve preço no servidor. SaleOrderItem.unit_price/line_total são snapshots imutáveis por edições posteriores. Replay da mesma chave/payload deve retornar pedido original antes de reprecificar.
+- StockMovement registra entradas/saídas; apply_stock_movement bloqueia produto e variantes, sync_product_stock_from_variants agrega ativas; cancelamento estorna uma vez. Estoque absoluto em edição pode sobrescrever saldo observado antes de venda: risco a reproduzir na etapa 4. Não declarar falha concorrente sem teste PostgreSQL.
+- Frontend utils/pricing.ts: effectiveUnitPrice prefere effective_price do servidor para variante; fallback override e preço base. displayPrice usa variantes ativas em estoque, ou todas ativas se nenhuma disponível. Consumidores: useCart, usePdvCart, CartDrawer, ProductDetailView, ProductCard (verificar ordenação e filtros adicionais na etapa 2), order.service. Zod em schemas/product.schema.ts e types/product.ts. Galeria até 3 imagens, 2 MiB cada, JPEG/PNG/WebP com validação backend; preservar referências em PATCH.
+
+## Decisões propostas (não implementadas)
+D1: campos aditivos promotional_price, promotion_starts_at, promotion_ends_at; Decimal finito >=0, estritamente abaixo do preço normal, até 2 casas; null remove, omissão preserva. Início inclusivo, fim exclusivo, timezone-aware; validar intervalo. Usar mesmo instante de referência por operação. Campo price continua normal; effective_price e estado de promoção derivados no servidor.
+D2: variante sem override herda promoção do pai; override próprio não herda; promoção própria exige override próprio. Proposta de mesma regra no PDV e online, pendente de aprovação comercial. Preço de 0 válido; não usar truthiness. Sem cupons/acúmulo. Validar também alterações de preço normal que tornem promoção inválida.
+D3: mudança de preço entre vitrine e confirmação exige revisão explícita, sem confiar em preço do cliente; contrato aditivo de comparação/versão a definir com compatibilidade legada. Replay idempotente preserva snapshot e não baixa estoque novamente. Planejar ordenação/filtros por preço anunciado e consulta sem N+1.
+D4: atributos configuráveis por produto; manter ProductVariant e IDs; não inferir tamanho/cor a partir de rótulos antigos. Combinação canônica única; limites de cardinalidade e SKU namespace por tenant a definir antes da migração. Arquivamento/ativação em vez de exclusão destrutiva de variantes referenciadas. Não modificar estoque ou logística nesta etapa.
+D5: stock.py como referência de movimentos e lock order; editar saldo via ajuste explícito ou controle otimista de versão a definir. Tratar última variante desativada, transição simples/variável e cancelamento. Valor potencial do estoque não é receita realizada.
+D6: storage isolado, referências de imagem pertencentes ao tenant/produto, ordem/capa preservadas; limpeza externa somente após commit e política de referências; testes nunca acessam R2 produtivo.
+D7: branch independente da PR #26; helpers/componentes novos quando viável. Sobreposição em models, serializers, views, admin, migrations, schemas, types, useProducts, order.service, CartDrawer e vistas de produto; não tocar módulos de shipping. main termina em 0051; #26 tem 0052/0053. Cadeias paralelas possíveis; futura reconciliação explicitamente autorizada, sem renumerar migrações homologadas ou depender de migration ausente. Validar grafo, makemigrations --check e dados legados em PostgreSQL descartável. Verificar PR #24 e isolamento de previews Cloudflare antes de integração.
+
+## Matriz de referência (sem mudança funcional)
+Existentes: bipdelivery/tests/test_product_variant_pricing.py (11 testes de domínio), test_checkout_variant_pricing.py (16 testes checkout/PDV/serializer/tenant/snapshot); frontend src/utils/__tests__/pricing.spec.ts (10); Cypress checkout/variant-pricing-smoke.cy.ts (backend real, fixture local). Novos: test_product_management_baseline.py congela contrato de PATCH sem variantes, omissão/null/zero em override, categoria alheia e replay após reprecificação; product-management-baseline.spec.ts congela preço zero e seleção de preço anunciável. Não confundir testes escritos com testes executados.
+Comandos locais isolados a partir da raiz:
+```sh
+python -m pytest bipdelivery/tests/test_product_variant_pricing.py bipdelivery/tests/test_checkout_variant_pricing.py bipdelivery/tests/test_product_management_baseline.py
+cd bipflow-frontend
+npm run test:unit:run -- src/utils/__tests__/pricing.spec.ts src/utils/__tests__/product-management-baseline.spec.ts
+```
+Rodar suíte completa, typecheck/lint/build/Docker e Cypress real antes de homologar. CI main atual usa PR para main, push main e workflow_dispatch; commits em branch isolada não garantem execução. Testes PostgreSQL e regressão combinada com #26 são gates posteriores, não resultados atuais. Preview automático Cloudflare pode existir independentemente do CI; verificar isolamento, não solicitar deploy.
+
+## Gate etapa 1.0
+- Baseline, inventário, decisões propostas e testes de referência registrados.
+- Confirmar política D2 e comportamento de revisão de preço D3, antes de etapa 2.
+- Executar testes de referência e CI no HEAD; não declarar homologação antes dos resultados.
+- Não implementar promoção, alterar schema, criar merge, deploy ou ativar produção nesta etapa.
