@@ -103,3 +103,14 @@ class NationalShippingCheckoutTests(TestCase):
         self.assertEqual(SaleOrder.objects.filter(store=self.store).count(), 1)
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock_quantity, 4)
+
+    @override_settings(BIPFLOW_SIMULATED_NATIONAL_CHECKOUT=True)
+    def test_pickup_without_national_selection_preserves_legacy_total(self):
+        self.payload.pop("national_shipping")
+        self.payload["customer"]["delivery_method"] = "pickup"
+        response = self.checkout()
+        self.assertEqual(response.status_code, 200, response.data)
+        order = SaleOrder.objects.get(store=self.store)
+        self.assertEqual(str(order.delivery_fee), "0.00")
+        self.assertEqual(str(order.total), "10.00")
+        self.assertEqual(order.shipping_snapshot, {})
