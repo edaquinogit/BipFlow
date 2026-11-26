@@ -2653,10 +2653,17 @@ class CheckoutCustomerInputSerializer(serializers.Serializer):
 CHECKOUT_HONEYPOT_FIELDS = ("website", "company")
 
 
+class NationalShippingInputSerializer(serializers.Serializer):
+    destination_postal_code = serializers.RegexField(r"^[0-9]{5}-?[0-9]{3}$")
+    service = serializers.ChoiceField(choices=["economico_simulado", "expresso_simulado"])
+    expected_price = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal("0"))
+
+
 class CheckoutRequestSerializer(serializers.Serializer):
     """Serializer for the public product checkout request."""
 
     items = CheckoutItemInputSerializer(many=True)
+    national_shipping = NationalShippingInputSerializer(required=False)
     customer = CheckoutCustomerInputSerializer()
     bot_session_id = serializers.CharField(required=False, allow_blank=True, default="")
     idempotency_key = serializers.CharField(
@@ -2701,6 +2708,12 @@ class CheckoutRequestSerializer(serializers.Serializer):
         customer_data = (
             initial_data.get("customer", {}) if hasattr(initial_data, "get") else {}
         )
+
+        if "national_shipping" in attrs and (
+            attrs["customer"]["delivery_method"] != "delivery"
+            or attrs["customer"].get("delivery_region_id") is not None
+        ):
+            raise serializers.ValidationError("Frete nacional exige entrega sem regiao local.")
 
         for field_name in CHECKOUT_HONEYPOT_FIELDS:
             if self._submitted_text(initial_data, field_name) or self._submitted_text(
@@ -2869,6 +2882,7 @@ class SaleOrderDetailSerializer(SaleOrderSerializer):
             "payment_reference",
             "payment_status_events",
             "available_payment_actions",
+            "shipping_snapshot",
         ]
 
     def get_available_payment_actions(self, order: SaleOrder) -> list[str]:
