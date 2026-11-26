@@ -1084,7 +1084,7 @@ function canOpenWhatsAppCheckout(): boolean {
   return true
 }
 
-async function handleSubmitOrder(): Promise<void> {
+async function handleSubmitOrder(selection?: import('@/types/product').NationalShippingSelection): Promise<void> {
   if (!canOpenWhatsAppCheckout() || isSubmittingOrder.value) {
     return
   }
@@ -1092,7 +1092,9 @@ async function handleSubmitOrder(): Promise<void> {
   isSubmittingOrder.value = true
 
   try {
-    const checkout = await orderService.checkoutViaWhatsApp(items.value, customer.value)
+    const checkout = selection
+      ? await orderService.checkoutViaWhatsApp(items.value, customer.value, selection)
+      : await orderService.checkoutViaWhatsApp(items.value, customer.value)
 
     if (!checkout.whatsapp_url) {
       toast.error('Nao foi possivel abrir o WhatsApp da loja. Seu carrinho foi mantido.')

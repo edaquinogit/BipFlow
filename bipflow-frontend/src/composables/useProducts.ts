@@ -106,6 +106,18 @@ export function useProducts() {
         return;
       }
 
+      // Logistics measurements are nullable: on PATCH, an emptied field is
+      // an explicit request to clear the stored measurement, not "leave it
+      // unchanged". DRF maps an empty multipart value to None for nullable
+      // model fields, matching the existing low_stock_threshold contract.
+      if (
+        options.partialUpdate &&
+        ["weight_grams", "length_cm", "width_cm", "height_cm"].includes(key)
+      ) {
+        formData.append(key, value === null || value === undefined ? "" : String(value));
+        return;
+      }
+
       // Free-text fields the edit form binds directly. Everywhere else an
       // empty value means "leave this field untouched" (partial update), but
       // on an edit an empty input is a deliberate "clear it" -- dropping it

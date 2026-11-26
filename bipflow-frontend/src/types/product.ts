@@ -48,6 +48,10 @@ export interface Product {
   description?: string | null
   price: string
   size?: string | null
+  weight_grams?: number | null
+  length_cm?: string | number | null
+  width_cm?: string | number | null
+  height_cm?: string | number | null
   category: ProductCategory
   image: string | null
   images?: string[]
@@ -93,6 +97,13 @@ export interface CartItem {
 // usable CustomerProfile (see types/customer.ts for the profile shape) --
 // the backend prefers the profile when one exists and is complete, and
 // only reads these as a fallback otherwise.
+export interface NationalShippingSelection {
+  destination_postal_code: string
+  state: string
+  service: string
+  expected_price: string
+}
+
 export interface CartCustomer {
   deliveryMethod: 'delivery' | 'pickup'
   paymentMethod: 'pix' | 'card' | 'cash'
@@ -128,6 +139,7 @@ export interface CheckoutPayloadCustomer {
 }
 
 export interface CheckoutPayload {
+  national_shipping?: NationalShippingSelection
   items: CheckoutPayloadItem[]
   customer: CheckoutPayloadCustomer
   bot_session_id?: string
@@ -231,6 +243,10 @@ export const ProductSchema = z.object({
   description: z.string().nullable().optional(),
   price: z.union([z.string(), z.number()]).transform((value) => String(value)),
   size: z.string().nullable().optional(),
+  weight_grams: z.number().int().positive().nullable().optional(),
+  length_cm: z.union([z.string(), z.number()]).nullable().optional(),
+  width_cm: z.union([z.string(), z.number()]).nullable().optional(),
+  height_cm: z.union([z.string(), z.number()]).nullable().optional(),
   category: ProductCategorySchema,
   image: z.string().url().nullable(),
   images: z.array(z.string().url()).optional().default([]),

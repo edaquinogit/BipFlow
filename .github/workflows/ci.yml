@@ -25,6 +25,20 @@ jobs:
   backend:
     name: Backend (Django / pytest)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: bipflow_ci
+          POSTGRES_USER: bipflow_ci
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: .
@@ -45,6 +59,12 @@ jobs:
 
       - name: Run test suite
         run: python -m pytest
+
+      - name: PostgreSQL shipping concurrency
+        env:
+          DATABASE_URL: postgresql://bipflow_ci:ci-only-password@127.0.0.1:5432/bipflow_ci?sslmode=disable
+          DJANGO_ENV: development
+        run: python -m pytest bipdelivery/tests/test_shipping_concurrency.py -v
 
   frontend:
     name: Frontend (Vue / typecheck / lint / unit / build)
@@ -147,6 +167,11 @@ jobs:
           python bipdelivery/manage.py migrate --noinput
           python bipdelivery/manage.py seed_dashboard_roles --email admin@example.com --password ci-e2e-throwaway-pw-2026 --staff --role admin
           python bipdelivery/manage.py seed_e2e_demo_data
+
+      - name: Prepare isolated national shipping fixture
+        run: |
+          python bipdelivery/manage.py shell -c 'from bipdelivery.api.models import Store, Product, StoreShippingSettings; s=Store.objects.get(slug="default"); Product.objects.filter(store=s,name="Produto Demo E2E").update(weight_grams=200,length_cm=10,width_cm=8,height_cm=3); c=StoreShippingSettings.get_for_store(s); c.origin_postal_code="40010000"; c.national_shipping_enabled=True; c.package_options=[dict(name="box",length_cm=20,width_cm=15,height_cm=10)]; c.save()'
+          printf '\nBIPFLOW_SIMULATED_NATIONAL_CHECKOUT = True\n' >> bipdelivery/core/settings.py
 
       - name: Start Django backend
         run: |

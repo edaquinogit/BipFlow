@@ -68,6 +68,7 @@ from .models import (
     StockMovement,
     Store,
     StoreCommerceSettings,
+    StoreShippingSettings,
     StorefrontBanner,
     StorefrontAppearance,
     StoreMembership,
@@ -121,6 +122,7 @@ from .serializers import (
     SaleOrderSummarySerializer,
     SaleOrderTimeseriesPointSerializer,
     StoreCommerceSettingsSerializer,
+    StoreShippingSettingsSerializer,
     StockMovementCreateSerializer,
     StockMovementSerializer,
     StoreAppearanceSettingsSerializer,
@@ -2070,6 +2072,46 @@ class StoreCommerceSettingsView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+class StoreShippingSettingsView(APIView):
+    """Read/update shipping configuration for the authenticated current store.
+
+    Store resolution and membership checks mirror the commerce-settings
+    endpoint. No store identifier is accepted from the request body.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        store = resolve_request_store(request)
+        if not can_read_storefront_dashboard_store(request, store):
+            return permission_denied_error(
+                "Voce nao possui permissao para acessar as configuracoes de frete desta loja."
+            )
+        settings_row = StoreShippingSettings.get_for_store(store)
+        return Response(
+            StoreShippingSettingsSerializer(settings_row).data,
+            status=status.HTTP_200_OK,
+        )
+
+    def patch(self, request, *args, **kwargs):
+        store = resolve_request_store(request)
+        if not can_read_storefront_dashboard_store(request, store):
+            return permission_denied_error(
+                "Voce nao possui permissao para acessar as configuracoes de frete desta loja."
+            )
+        if not can_edit_storefront_dashboard_store(request, store):
+            return permission_denied_error(
+                "Voce nao possui permissao para editar as configuracoes de frete desta loja."
+            )
+        settings_row = StoreShippingSettings.get_for_store(store)
+        serializer = StoreShippingSettingsSerializer(
+            settings_row, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
 class PublicStoreCommerceSettingsView(APIView):
     """Public, unauthenticated commercial rules for one store's vitrine.
 
@@ -2985,6 +3027,8 @@ class CheckoutWhatsAppView(APIView):
                 customer,
             ),
         }
+        if "national_shipping" in validated_data:
+            canonical_payload["national_shipping"] = validated_data["national_shipping"]
         encoded_payload = json.dumps(
             canonical_payload,
             sort_keys=True,
@@ -3287,6 +3331,7 @@ class CheckoutWhatsAppView(APIView):
         cart_items = validated_data["items"]
         customer = validated_data["customer"]
         is_delivery = customer["delivery_method"] == "delivery"
+        national_shipping = validated_data.get("national_shipping")
         whatsapp_phone = store.get_configured_whatsapp_phone()
         if not whatsapp_phone:
             logger.warning(
@@ -3348,13 +3393,14 @@ class CheckoutWhatsAppView(APIView):
                         "A regiao de entrega selecionada nao esta disponivel nesta loja.",
                     ).response
             elif (
-                profile is not None
+                national_shipping is None
+                and profile is not None
                 and profile.delivery_region_id
                 and profile.delivery_region.is_active
             ):
                 delivery_region = profile.delivery_region
 
-            if profile_has_complete_address:
+            if profile_has_complete_address and national_shipping is None:
                 order_address = profile.address.strip()
                 order_neighborhood = profile.neighborhood.strip()
                 order_city = profile.city.strip()
@@ -3407,7 +3453,25 @@ class CheckoutWhatsAppView(APIView):
                 )
 
                 delivery_fee = Decimal("0.00")
-                if is_delivery:
+                shipping_snapshot = {}
+                if national_shipping is not None:
+                    from .shipping_confirmation import confirm_shipping
+                    from .shipping_quotes import ShippingQuoteError
+
+                    if not getattr(settings, "BIPFLOW_SIMULATED_NATIONAL_CHECKOUT", False):
+                        raise _CheckoutCommerceError("national_shipping_unavailable", "Frete nacional indisponivel.")
+                    try:
+                        delivery_fee, shipping_snapshot = confirm_shipping(
+                            store=store, items=cart_items,
+                            destination=national_shipping["destination_postal_code"],
+                            service=national_shipping["service"],
+                        )
+                    except ShippingQuoteError as exc:
+                        raise _CheckoutCommerceError("national_shipping_unavailable", "Nao foi possivel confirmar o frete.") from exc
+                    shipping_snapshot["destination_state"] = national_shipping["state"]
+                    if delivery_fee != national_shipping["expected_price"]:
+                        raise _CheckoutCommerceError("shipping_quote_changed", "Cotacao alterada. Simule novamente.")
+                elif is_delivery:
                     delivery_fee = (
                         Decimal(delivery_region.delivery_fee)
                         if delivery_region is not None
@@ -3415,7 +3479,7 @@ class CheckoutWhatsAppView(APIView):
                     )
                 total = subtotal + delivery_fee
 
-                if is_delivery:
+                if is_delivery and national_shipping is None:
                     self._sync_profile_checkout_defaults(
                         profile,
                         address=order_address,
@@ -3460,6 +3524,13 @@ class CheckoutWhatsAppView(APIView):
                         ]
                     )
 
+                if shipping_snapshot:
+                    message_lines.extend([
+                        f'CEP: {shipping_snapshot["destination_postal_code"]}',
+                        f'UF: {shipping_snapshot["destination_state"]}',
+                        f'Frete simulado: {shipping_snapshot["service"]}',
+                        shipping_snapshot["notice"],
+                    ])
                 if notes:
                     message_lines.append(f"Observacoes: {notes}")
 
@@ -3485,6 +3556,7 @@ class CheckoutWhatsAppView(APIView):
                     neighborhood=order_neighborhood,
                     city=order_city,
                     notes=notes,
+                    shipping_snapshot=shipping_snapshot,
                     subtotal=subtotal.quantize(Decimal("0.01")),
                     delivery_fee=delivery_fee.quantize(Decimal("0.01")),
                     total=total.quantize(Decimal("0.01")),

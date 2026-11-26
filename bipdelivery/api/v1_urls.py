@@ -1,6 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from .shipping_quote_views import ShippingQuoteView
 from .pdv import PdvReceiptEmailView, PdvSaleView
 from .views import (
     BotConversationViewSet,
@@ -24,6 +25,7 @@ from .views import (
     StockMovementViewSet,
     StoreAppearanceSettingsView,
     StoreCommerceSettingsView,
+    StoreShippingSettingsView,
     StorefrontBannerDetailView,
     StorefrontBannerListView,
     StorefrontBannerReorderView,
@@ -46,6 +48,7 @@ router.register(r"stock-movements", StockMovementViewSet, basename="stock-moveme
 router.register(r"feedback-reports", CustomerFeedbackViewSet, basename="feedback-report")
 
 urlpatterns = [
+    path("public/stores/<slug:slug>/shipping-quotes/", ShippingQuoteView.as_view(), name="public-shipping-quotes"),
     # Injeta todas as rotas geradas pelo roteador
     path("bot/messages/", BotMessageView.as_view(), name="bot-message"),
     path("checkout/whatsapp/", CheckoutWhatsAppView.as_view(), name="checkout-whatsapp"),
@@ -67,6 +70,11 @@ urlpatterns = [
         "store/current/commerce-settings/",
         StoreCommerceSettingsView.as_view(),
         name="store-current-commerce-settings",
+    ),
+    path(
+        "store/current/shipping-settings/",
+        StoreShippingSettingsView.as_view(),
+        name="store-current-shipping-settings",
     ),
     path(
         "store/current/appearance/",

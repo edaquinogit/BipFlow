@@ -21,6 +21,7 @@ from .models import (
     SaleOrderItem,
     Store,
     StoreCommerceSettings,
+    StoreShippingSettings,
     StorefrontAppearance,
     StorefrontBanner,
     StoreMembership,
@@ -234,6 +235,21 @@ class StoreCommerceSettingsAdmin(StoreScopedAdminMixin, admin.ModelAdmin):
         "accepts_cash",
     )
     search_fields = ("store__name", "store__slug")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(StoreShippingSettings)
+class StoreShippingSettingsAdmin(StoreScopedAdminMixin, admin.ModelAdmin):
+    list_display = (
+        "id",
+        "store",
+        "national_shipping_enabled",
+        "origin_postal_code",
+        "packaging_weight_grams",
+        "updated_at",
+    )
+    list_filter = ("national_shipping_enabled", "store")
+    search_fields = ("store__name", "store__slug", "origin_postal_code")
     readonly_fields = ("created_at", "updated_at")
 
 

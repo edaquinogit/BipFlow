@@ -6,6 +6,7 @@ import type {
   CartItem,
   CheckoutPayload,
   CheckoutResponse,
+  NationalShippingSelection,
 } from '@/types/product'
 import { isAxiosError } from '@/types/errors'
 import { formatBRL } from '@/utils/formatters'
@@ -75,7 +76,7 @@ export function extractCheckoutErrorMessage(error: unknown): string {
   return 'Nao foi possivel registrar o pedido agora. Revise os dados e tente novamente.'
 }
 
-function buildCheckoutPayload(items: CartItem[], customer: CartCustomer): CheckoutPayload {
+function buildCheckoutPayload(items: CartItem[], customer: CartCustomer, nationalShipping?: NationalShippingSelection): CheckoutPayload {
   const payload: CheckoutPayload = {
     items: items.map((item) => ({
       product_id: item.product.id,
@@ -94,6 +95,11 @@ function buildCheckoutPayload(items: CartItem[], customer: CartCustomer): Checko
       neighborhood: customer.neighborhood.trim(),
       city: customer.city.trim(),
     },
+  }
+
+  if (nationalShipping) {
+    payload.national_shipping = nationalShipping
+    payload.customer.delivery_region_id = null
   }
 
   const botSessionId = getStoredBotSessionId()
@@ -118,6 +124,7 @@ function checkoutPayloadFingerprint(payload: CheckoutPayload): string {
     items: payload.items,
     customer: payload.customer,
     bot_session_id: payload.bot_session_id ?? '',
+    ...(payload.national_shipping ? { national_shipping: payload.national_shipping } : {}),
   }
   const serialized = JSON.stringify(fingerprintPayload)
   let hash = 2166136261
@@ -212,8 +219,8 @@ function buildWhatsAppHandoffUrl(phoneDigits: string, items: CartItem[], subtota
 }
 
 export const orderService = {
-  async checkoutViaWhatsApp(items: CartItem[], customer: CartCustomer): Promise<CheckoutResponse> {
-    const payload = buildCheckoutPayload(items, customer)
+  async checkoutViaWhatsApp(items: CartItem[], customer: CartCustomer, nationalShipping?: NationalShippingSelection): Promise<CheckoutResponse> {
+    const payload = buildCheckoutPayload(items, customer, nationalShipping)
     payload.idempotency_key = getCheckoutIdempotencyKey(payload)
     const response = await api.post<CheckoutResponse>('v1/checkout/whatsapp/', payload)
     clearCheckoutIdempotencyKey(payload)

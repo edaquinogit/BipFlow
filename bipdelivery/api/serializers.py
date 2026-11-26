@@ -42,6 +42,7 @@ from .models import (
     StockMovement,
     Store,
     StoreCommerceSettings,
+    StoreShippingSettings,
     StorefrontBanner,
     StorefrontDestination,
     StorefrontAppearance,
@@ -474,6 +475,10 @@ class ProductSerializer(serializers.ModelSerializer):
             "description",
             "price",
             "size",
+            "weight_grams",
+            "length_cm",
+            "width_cm",
+            "height_cm",
             "stock_quantity",
             "low_stock_threshold",
             "is_available",
@@ -2185,6 +2190,88 @@ class StoreCommerceSettingsSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class StoreShippingSettingsSerializer(serializers.ModelSerializer):
+    """Dashboard configuration for one store's shipping origin and packages."""
+
+    origin_postal_code = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=9,
+        trim_whitespace=True,
+    )
+    packaging_weight_grams = serializers.IntegerField(min_value=0, required=False)
+    package_options = serializers.JSONField(required=False)
+
+    class Meta:
+        model = StoreShippingSettings
+        fields = [
+            "national_shipping_enabled",
+            "origin_postal_code",
+            "packaging_weight_grams",
+            "package_options",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "national_shipping_enabled",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate_origin_postal_code(self, value: str) -> str:
+        digits = re.sub(r"\D", "", value)
+        if digits and len(digits) != 8:
+            raise serializers.ValidationError("Informe um CEP valido com 8 digitos.")
+        return digits
+
+    def validate_package_options(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Informe uma lista de embalagens.")
+        if len(value) > 20:
+            raise serializers.ValidationError("Cadastre no maximo 20 tipos de embalagem.")
+
+        normalized = []
+        for index, option in enumerate(value):
+            if not isinstance(option, dict):
+                raise serializers.ValidationError(f"Embalagem {index + 1} invalida.")
+            name = str(option.get("name", "")).strip()
+            if not name or len(name) > 80:
+                raise serializers.ValidationError(
+                    f"Embalagem {index + 1}: informe um nome de ate 80 caracteres."
+                )
+            item = {"name": name}
+            for field in ("length_cm", "width_cm", "height_cm"):
+                try:
+                    number = Decimal(str(option.get(field)))
+                except (InvalidOperation, TypeError, ValueError):
+                    raise serializers.ValidationError(
+                        f"Embalagem {index + 1}: {field} deve ser numerico."
+                    )
+                if not number.is_finite() or number <= 0:
+                    raise serializers.ValidationError(
+                        f"Embalagem {index + 1}: {field} deve ser maior que zero."
+                    )
+                item[field] = float(number)
+            try:
+                tare_weight = Decimal(str(option.get("tare_weight_grams", 0)))
+                if (
+                    not tare_weight.is_finite()
+                    or tare_weight != tare_weight.to_integral_value()
+                ):
+                    raise ValueError
+            except (InvalidOperation, TypeError, ValueError):
+                raise serializers.ValidationError(
+                    f"Embalagem {index + 1}: peso da embalagem invalido."
+                )
+            if tare_weight < 0:
+                raise serializers.ValidationError(
+                    f"Embalagem {index + 1}: peso nao pode ser negativo."
+                )
+            item["tare_weight_grams"] = int(tare_weight)
+            normalized.append(item)
+        return normalized
+
+
 class PublicStoreCommerceSettingsSerializer(serializers.ModelSerializer):
     """Storefront-safe projection of a store's commercial rules.
 
@@ -2566,10 +2653,18 @@ class CheckoutCustomerInputSerializer(serializers.Serializer):
 CHECKOUT_HONEYPOT_FIELDS = ("website", "company")
 
 
+class NationalShippingInputSerializer(serializers.Serializer):
+    destination_postal_code = serializers.RegexField(r"^[0-9]{5}-?[0-9]{3}$")
+    state = serializers.ChoiceField(choices="AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO".split())
+    service = serializers.ChoiceField(choices=["economico_simulado", "expresso_simulado"])
+    expected_price = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal("0"))
+
+
 class CheckoutRequestSerializer(serializers.Serializer):
     """Serializer for the public product checkout request."""
 
     items = CheckoutItemInputSerializer(many=True)
+    national_shipping = NationalShippingInputSerializer(required=False)
     customer = CheckoutCustomerInputSerializer()
     bot_session_id = serializers.CharField(required=False, allow_blank=True, default="")
     idempotency_key = serializers.CharField(
@@ -2614,6 +2709,12 @@ class CheckoutRequestSerializer(serializers.Serializer):
         customer_data = (
             initial_data.get("customer", {}) if hasattr(initial_data, "get") else {}
         )
+
+        if "national_shipping" in attrs and (
+            attrs["customer"]["delivery_method"] != "delivery"
+            or attrs["customer"].get("delivery_region_id") is not None
+        ):
+            raise serializers.ValidationError("Frete nacional exige entrega sem regiao local.")
 
         for field_name in CHECKOUT_HONEYPOT_FIELDS:
             if self._submitted_text(initial_data, field_name) or self._submitted_text(
@@ -2782,6 +2883,7 @@ class SaleOrderDetailSerializer(SaleOrderSerializer):
             "payment_reference",
             "payment_status_events",
             "available_payment_actions",
+            "shipping_snapshot",
         ]
 
     def get_available_payment_actions(self, order: SaleOrder) -> list[str]:
