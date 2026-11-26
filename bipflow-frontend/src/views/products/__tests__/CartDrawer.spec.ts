@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import CartDrawer from '../CartDrawer.vue'
+import ShippingQuotePreview from '../ShippingQuotePreview.vue'
+const routeParams = vi.hoisted(() => ({ storeSlug: undefined as string | undefined }))
 import type { CartCustomer, CartItem } from '@/types/product'
 import type { CustomerProfile } from '@/types/customer'
 import type { DeliveryRegion } from '@/types/delivery'
 
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ params: {}, fullPath: '/produtos' }),
+  useRoute: () => ({ params: routeParams, fullPath: '/produtos' }),
   RouterLink: { template: '<a><slot /></a>' },
 }))
 
@@ -91,7 +93,33 @@ const submitBtn = (wrapper: Drawer) => wrapper.get('[data-cy="checkout-submit-bu
 
 describe('CartDrawer', () => {
   beforeEach(() => {
+    routeParams.storeSlug = undefined
     vi.resetModules()
+  })
+
+  it('blocks checkout after national selection invalidation until explicit local choice', async () => {
+    routeParams.storeSlug = 'test-store'
+    const wrapper = mountDrawer({ customer: buildCustomer({ deliveryMethod: 'delivery' }) })
+    try {
+      await goToDetails(wrapper)
+      const preview = wrapper.getComponent(ShippingQuotePreview)
+      preview.vm.$emit('selection', {
+        destination_postal_code: '49010000', state: 'SE',
+        service: 'economico_simulado', expected_price: '16.00',
+      })
+      await wrapper.vm.$nextTick()
+      preview.vm.$emit('selection', null)
+      await wrapper.vm.$nextTick()
+      expect(submitBtn(wrapper).attributes('disabled')).toBeDefined()
+      await submitBtn(wrapper).trigger('click')
+      expect(wrapper.emitted('submitOrder')).toBeUndefined()
+      const local = wrapper.findAll('button').find(b => b.text() === 'Usar entrega local')!
+      await local.trigger('click')
+      await submitBtn(wrapper).trigger('click')
+      expect(wrapper.emitted('submitOrder')).toEqual([[]])
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   describe('step flow', () => {
