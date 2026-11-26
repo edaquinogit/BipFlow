@@ -72,6 +72,26 @@ describe('ShippingQuotePreview', () => {
     wrapper.unmount()
   })
 
+  it('confirms only a server-enabled quote with valid UF and invalidates on CEP change', async () => {
+    post.mockResolvedValue({ data: { ...result.data, order_confirmation_available: true } })
+    const wrapper = await setup()
+    await wrapper.get('#shipping-preview-cep').setValue('49010000')
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+    await wrapper.get('input[type=radio]').setValue()
+    const confirm = wrapper.findAll('button').find(b => b.text() === 'Usar frete simulado')!
+    expect(confirm.attributes('disabled')).toBeDefined()
+    await wrapper.get('input[maxlength="2"]').setValue('se')
+    await confirm.trigger('click')
+    expect(wrapper.emitted('selection')?.at(-1)).toEqual([{
+      destination_postal_code: '49010000', state: 'SE',
+      service: 'economico_simulado', expected_price: '16.00',
+    }])
+    await wrapper.get('#shipping-preview-cep').setValue('40010000')
+    expect(wrapper.emitted('selection')?.at(-1)).toEqual([null])
+    wrapper.unmount()
+  })
+
   it('shows a safe error on failed quote', async () => {
     post.mockRejectedValue(new Error('internal'))
     const wrapper = await setup()
