@@ -1,4 +1,5 @@
 """Public storefront quote preview, gated per tenant; never creates orders."""
+from django.conf import settings
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -51,7 +52,7 @@ class ShippingQuoteView(APIView):
                             status=status.HTTP_400_BAD_REQUEST)
         return Response({
             "simulated": True,
-            "order_confirmation_available": False,
+            "order_confirmation_available": bool(getattr(settings, "BIPFLOW_SIMULATED_NATIONAL_CHECKOUT", False)),
             "quotes": [
                 {"service": quote.service, "price": str(quote.price),
                  "estimated_days": quote.estimated_days,
