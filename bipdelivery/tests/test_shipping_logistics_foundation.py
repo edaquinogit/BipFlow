@@ -209,7 +209,7 @@ class ShippingMigrationTests(TransactionTestCase):
         return executor.loader.project_state([target]).apps
 
     def test_forward_and_reverse_preserve_catalog_and_local_fees(self):
-        self.addCleanup(self.migrate, self.after)
+        self.addCleanup(self.migrate, ("api", "0053_saleorder_shipping_snapshot"))
         old = self.migrate(self.before)
         store = old.get_model("api", "Store").objects.create(
             name="Migration store", slug="shipping-migration"
