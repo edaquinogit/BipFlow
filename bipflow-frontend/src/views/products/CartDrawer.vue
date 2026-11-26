@@ -614,9 +614,10 @@ const emit = defineEmits<{
   submitOrder: [selection?: NationalShippingSelection]
 }>()
 
+const route = useRoute()
 const nationalSelection = ref<NationalShippingSelection | null>(null)
 const nationalTotal = computed(() => nationalSelection.value ? props.subtotal + Number(nationalSelection.value.expected_price) : props.total)
-watch(() => [props.isOpen, props.customer.deliveryMethod, props.customer.deliveryRegionId, props.customer.address, props.customer.city, props.customer.neighborhood, route.params?.storeSlug, JSON.stringify(props.items.map(i => [i.product.id, i.variant?.id, i.quantity]))], () => { nationalSelection.value = null }, { flush: 'sync' })
+watch(() => [props.isOpen, props.customer.deliveryMethod, props.customer.deliveryRegionId, route.params?.storeSlug, JSON.stringify(props.items.map(i => [i.product.id, i.variant?.id, i.quantity]))], () => { nationalSelection.value = null }, { flush: 'sync' })
 const containerRef = ref<HTMLElement | null>(null)
 const closeButtonRef = ref<HTMLButtonElement | null>(null)
 const reviewHeadingRef = ref<HTMLElement | null>(null)
@@ -677,7 +678,6 @@ watch(
   },
 )
 
-const route = useRoute()
 const accountRoute = computed(() => {
   const storeSlug = typeof route.params?.storeSlug === 'string' ? route.params.storeSlug : ''
   return { path: customerAccountPath(storeSlug) }
