@@ -97,6 +97,13 @@ export interface CartItem {
 // usable CustomerProfile (see types/customer.ts for the profile shape) --
 // the backend prefers the profile when one exists and is complete, and
 // only reads these as a fallback otherwise.
+export interface NationalShippingSelection {
+  destination_postal_code: string
+  state: string
+  service: string
+  expected_price: string
+}
+
 export interface CartCustomer {
   deliveryMethod: 'delivery' | 'pickup'
   paymentMethod: 'pix' | 'card' | 'cash'
@@ -132,6 +139,7 @@ export interface CheckoutPayloadCustomer {
 }
 
 export interface CheckoutPayload {
+  national_shipping?: NationalShippingSelection
   items: CheckoutPayloadItem[]
   customer: CheckoutPayloadCustomer
   bot_session_id?: string
