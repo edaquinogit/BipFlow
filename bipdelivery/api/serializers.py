@@ -2655,6 +2655,7 @@ CHECKOUT_HONEYPOT_FIELDS = ("website", "company")
 
 class NationalShippingInputSerializer(serializers.Serializer):
     destination_postal_code = serializers.RegexField(r"^[0-9]{5}-?[0-9]{3}$")
+    state = serializers.ChoiceField(choices="AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO".split())
     service = serializers.ChoiceField(choices=["economico_simulado", "expresso_simulado"])
     expected_price = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal("0"))
 
