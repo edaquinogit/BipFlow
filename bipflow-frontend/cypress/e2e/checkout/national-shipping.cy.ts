@@ -1,15 +1,9 @@
 /// <reference types="cypress" />
 
-describe('National shipping browser flow (stubbed quote and checkout)', () => {
+describe('National shipping browser flow (real backend)', () => {
   beforeEach(() => {
-    cy.intercept('GET', '**/api/v1/public/stores/default/shipping-quotes/', { enabled: true })
-    cy.intercept('POST', '**/api/v1/public/stores/default/shipping-quotes/', {
-      simulated: true, order_confirmation_available: true,
-      quotes: [{ service: 'economico_simulado', price: '16.00', estimated_days: 4,
-        provider: 'simulated', notice: 'Simulacao, nao oficial' }],
-    }).as('quote')
-    cy.intercept('POST', '**/api/v1/checkout/whatsapp/', { statusCode: 422,
-      body: { detail: 'Test fixture: no order created' } }).as('checkout')
+    cy.intercept('POST', '**/api/v1/public/stores/default/shipping-quotes/').as('quote')
+    cy.intercept('POST', '**/api/v1/checkout/whatsapp/').as('checkout')
     cy.visit('/l/default/produtos')
     cy.get('input[aria-label="Buscar produtos por nome"]', { timeout: 15000 }).type('Produto Demo E2E')
     cy.contains('article', 'Produto Demo E2E', { timeout: 15000 })
@@ -32,9 +26,14 @@ describe('National shipping browser flow (stubbed quote and checkout)', () => {
   })
 
   it('forwards the selected quote and displays the estimated total', () => {
-    cy.get('@cart').find('[data-cy="checkout-summary"]').should('contain', '45,90')
+    cy.get('@cart').find('footer').should('contain', '45,90')
+    cy.window().then(win => cy.stub(win, 'open').returns({}))
     cy.get('@cart').find('[data-cy="checkout-submit-button"]').click()
-    cy.wait('@checkout').its('request.body').should(body => {
+    cy.wait('@checkout').then(({request, response}) => {
+      expect(response?.statusCode).to.eq(200)
+      expect(response?.body.delivery_fee).to.eq('16.00')
+      expect(response?.body.total).to.eq('45.90')
+      const body = request.body
       expect(body.national_shipping).to.deep.equal({
         destination_postal_code: '49010000', state: 'SE',
         service: 'economico_simulado', expected_price: '16.00',
