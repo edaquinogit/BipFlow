@@ -3400,7 +3400,7 @@ class CheckoutWhatsAppView(APIView):
             ):
                 delivery_region = profile.delivery_region
 
-            if profile_has_complete_address:
+            if profile_has_complete_address and national_shipping is None:
                 order_address = profile.address.strip()
                 order_neighborhood = profile.neighborhood.strip()
                 order_city = profile.city.strip()
@@ -3468,6 +3468,7 @@ class CheckoutWhatsAppView(APIView):
                         )
                     except ShippingQuoteError as exc:
                         raise _CheckoutCommerceError("national_shipping_unavailable", "Nao foi possivel confirmar o frete.") from exc
+                    shipping_snapshot["destination_state"] = national_shipping["state"]
                     if delivery_fee != national_shipping["expected_price"]:
                         raise _CheckoutCommerceError("shipping_quote_changed", "Cotacao alterada. Simule novamente.")
                 elif is_delivery:
@@ -3526,6 +3527,7 @@ class CheckoutWhatsAppView(APIView):
                 if shipping_snapshot:
                     message_lines.extend([
                         f'CEP: {shipping_snapshot["destination_postal_code"]}',
+                        f'UF: {shipping_snapshot["destination_state"]}',
                         f'Frete simulado: {shipping_snapshot["service"]}',
                         shipping_snapshot["notice"],
                     ])
