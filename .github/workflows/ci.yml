@@ -25,6 +25,20 @@ jobs:
   backend:
     name: Backend (Django / pytest)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: bipflow_ci
+          POSTGRES_USER: bipflow_ci
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: .
@@ -45,6 +59,12 @@ jobs:
 
       - name: Run test suite
         run: python -m pytest
+
+      - name: PostgreSQL shipping concurrency
+        env:
+          DATABASE_URL: postgresql://bipflow_ci:ci-only-password@127.0.0.1:5432/bipflow_ci?sslmode=disable
+          DJANGO_ENV: development
+        run: python -m pytest bipdelivery/tests/test_shipping_concurrency.py -v
 
   frontend:
     name: Frontend (Vue / typecheck / lint / unit / build)
