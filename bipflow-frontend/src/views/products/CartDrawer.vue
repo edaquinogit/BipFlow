@@ -197,9 +197,10 @@
             </h3>
 
             <ShippingQuotePreview
-              v-if="typeof route.params?.storeSlug === 'string'"
+              v-if="typeof route.params?.storeSlug === 'string' && customer.deliveryMethod === 'delivery'"
               :store-slug="route.params.storeSlug"
               :items="items"
+              @selection="nationalSelection = $event"
             />
 
             <!-- Compact, secondary financial summary -- Produtos/Frete moved out of
@@ -208,10 +209,10 @@
                  no local snapshot, nothing recomputed. -->
             <div class="mt-3 rounded-[var(--store-radius-sm)] bg-[var(--store-bg)] px-3 py-2.5" data-cy="checkout-summary">
               <CheckoutSummaryRow label="Produtos" :value="formatBRL(subtotal)" />
-              <div v-if="freightRowState !== 'hidden'" class="mt-1">
+              <div v-if="nationalSelection || freightRowState !== 'hidden'" class="mt-1">
                 <CheckoutSummaryRow
                   label="Frete"
-                  :value="freightRowState === 'amount' ? formatBRL(deliveryFee) : 'A calcular'"
+                  :value="nationalSelection ? formatBRL(Number(nationalSelection.expected_price)) : freightRowState === 'amount' ? formatBRL(deliveryFee) : 'A calcular'"
                 />
               </div>
               <p class="mt-2 text-[0.6875rem] text-[var(--store-text-muted)]">
@@ -352,7 +353,7 @@
                 </label>
 
                 <div
-                  v-if="hasCompleteProfileAddress"
+                  v-if="hasCompleteProfileAddress && !nationalSelection"
                   class="rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-xs leading-5 text-emerald-900"
                 >
                   <div class="flex items-start justify-between gap-3">
@@ -501,7 +502,7 @@
           <!-- Step 2: Total only + CTA -- the rest of the summary lives in the
                body now (see .cart-summary above the form). -->
           <template v-else>
-            <CheckoutSummaryRow label="Total" :value="formatBRL(total)" emphasis />
+            <CheckoutSummaryRow label="Total" :value="formatBRL(nationalTotal)" emphasis />
 
             <p
               v-if="footerMessage"
@@ -556,7 +557,7 @@ import StorefrontButton from '@/components/storefront/StorefrontButton.vue'
 import { customerAccountPath } from '@/router/auth.routes'
 import type { CustomerProfile } from '@/types/customer'
 import type { DeliveryRegion } from '@/types/delivery'
-import type { CartCustomer, CartItem } from '@/types/product'
+import type { CartCustomer, CartItem, NationalShippingSelection } from '@/types/product'
 import { formatBRL } from '@/utils/formatters'
 import { effectiveUnitPrice } from '@/utils/pricing'
 import { findFirstInvalidField, focusAndRevealField, type FocusableFormField } from '@/utils/formFieldFocus'
@@ -610,9 +611,12 @@ const emit = defineEmits<{
   removeItem: [productId: number, variantId?: number | null]
   updateQuantity: [productId: number, quantity: number, variantId?: number | null]
   updateCustomer: [patch: Partial<CartCustomer>]
-  submitOrder: []
+  submitOrder: [selection?: NationalShippingSelection]
 }>()
 
+const nationalSelection = ref<NationalShippingSelection | null>(null)
+const nationalTotal = computed(() => nationalSelection.value ? props.subtotal + Number(nationalSelection.value.expected_price) : props.total)
+watch(() => [props.isOpen, props.customer.deliveryMethod, props.customer.deliveryRegionId, props.customer.address, props.customer.city, props.customer.neighborhood, route.params?.storeSlug, JSON.stringify(props.items.map(i => [i.product.id, i.variant?.id, i.quantity]))], () => { nationalSelection.value = null }, { flush: 'sync' })
 const containerRef = ref<HTMLElement | null>(null)
 const closeButtonRef = ref<HTMLButtonElement | null>(null)
 const reviewHeadingRef = ref<HTMLElement | null>(null)
@@ -751,8 +755,8 @@ interface ValidationIssue {
 
 const isGuestIdentity = computed(() => !hasProfileIdentity.value)
 const isDeliverySelected = computed(() => props.customer.deliveryMethod === 'delivery')
-const needsGuestAddress = computed(() => isDeliverySelected.value && !hasCompleteProfileAddress.value)
-const needsDeliveryRegion = computed(() => isDeliverySelected.value && props.deliveryRegions.length > 0)
+const needsGuestAddress = computed(() => isDeliverySelected.value && (!!nationalSelection.value || !hasCompleteProfileAddress.value))
+const needsDeliveryRegion = computed(() => isDeliverySelected.value && !nationalSelection.value && props.deliveryRegions.length > 0)
 
 // --- Online-sales foundation: the store's commercial rules ---
 //
@@ -1018,7 +1022,8 @@ async function handleSubmitClick(): Promise<void> {
     return
   }
 
-  emit('submitOrder')
+  if (nationalSelection.value) emit('submitOrder', nationalSelection.value)
+  else emit('submitOrder')
 }
 
 function cartItemImage(item: CartItem): string {
