@@ -200,7 +200,7 @@
               v-if="typeof route.params?.storeSlug === 'string' && customer.deliveryMethod === 'delivery'"
               :store-slug="route.params.storeSlug"
               :items="items"
-              @selection="nationalSelection = $event"
+              @selection="handleNationalSelection"
             />
 
             <!-- Compact, secondary financial summary -- Produtos/Frete moved out of
@@ -209,6 +209,10 @@
                  no local snapshot, nothing recomputed. -->
             <div class="mt-3 rounded-[var(--store-radius-sm)] bg-[var(--store-bg)] px-3 py-2.5" data-cy="checkout-summary">
               <CheckoutSummaryRow label="Produtos" :value="formatBRL(subtotal)" />
+              <div v-if="nationalIntent && !nationalSelection" role="alert" class="mt-2">
+                Cotação nacional invalidada. Confirme novamente ou escolha entrega local.
+                <button type="button" @click="nationalIntent = false">Usar entrega local</button>
+              </div>
               <div v-if="nationalSelection || freightRowState !== 'hidden'" class="mt-1">
                 <CheckoutSummaryRow
                   label="Frete"
@@ -616,6 +620,13 @@ const emit = defineEmits<{
 
 const route = useRoute()
 const nationalSelection = ref<NationalShippingSelection | null>(null)
+const nationalIntent = ref(false)
+function handleNationalSelection(value: NationalShippingSelection | null) {
+  nationalSelection.value = value
+  if (value) nationalIntent.value = true
+}
+watch(() => props.isOpen, () => { nationalIntent.value = false })
+watch(() => props.customer.deliveryMethod, method => { if (method === 'pickup') nationalIntent.value = false })
 const nationalTotal = computed(() => nationalSelection.value ? props.subtotal + Number(nationalSelection.value.expected_price) : props.total)
 watch(() => [props.isOpen, props.customer.deliveryMethod, props.customer.deliveryRegionId, route.params?.storeSlug, JSON.stringify(props.items.map(i => [i.product.id, i.variant?.id, i.quantity]))], () => { nationalSelection.value = null }, { flush: 'sync' })
 const containerRef = ref<HTMLElement | null>(null)
@@ -791,6 +802,9 @@ const missingForMinimum = computed(() =>
 
 const checkoutIssues = computed<ValidationIssue[]>(() => {
   const issues: ValidationIssue[] = []
+  if (nationalIntent.value && !nationalSelection.value) {
+    issues.push({ kind: 'structural', message: 'Confirme novamente o frete nacional ou escolha entrega local.' })
+  }
 
   if (props.itemCount === 0) {
     issues.push({ kind: 'structural', message: 'Adicione ao menos um item ao pedido.' })
