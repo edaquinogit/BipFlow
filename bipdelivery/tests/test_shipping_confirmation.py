@@ -2,7 +2,7 @@ from django.core.cache import cache
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from bipdelivery.api.models import Category, Product, SaleOrder, Store, StoreShippingSettings
+from bipdelivery.api.models import Category, Product, ProductVariant, SaleOrder, Store, StoreShippingSettings
 
 
 class NationalShippingCheckoutTests(TestCase):
@@ -114,3 +114,37 @@ class NationalShippingCheckoutTests(TestCase):
         self.assertEqual(str(order.delivery_fee), "0.00")
         self.assertEqual(str(order.total), "10.00")
         self.assertEqual(order.shipping_snapshot, {})
+
+    @override_settings(BIPFLOW_SIMULATED_NATIONAL_CHECKOUT=True)
+    def test_mixed_products_and_variant_use_parent_dimensions(self):
+        second = Product.objects.create(
+            store=self.store, category=self.product.category, name="Second",
+            price=20, stock_quantity=5, weight_grams=300,
+            length_cm=10, width_cm=8, height_cm=3,
+        )
+        variant = ProductVariant.objects.create(
+            product=second, name="Blue", stock_quantity=5, price=25,
+        )
+        self.payload["items"].append({
+            "product_id": second.pk, "variant_id": variant.pk, "quantity": 2,
+        })
+        response = self.checkout()
+        self.assertEqual(response.status_code, 200, response.data)
+        order = SaleOrder.objects.get(store=self.store)
+        self.assertEqual(str(order.subtotal), "60.00")
+        self.assertEqual(str(order.total), "76.00")
+        self.assertEqual(order.shipping_snapshot["parcel"]["weight_grams"], 800)
+        variant.refresh_from_db()
+        self.assertEqual(variant.stock_quantity, 3)
+
+    @override_settings(BIPFLOW_SIMULATED_NATIONAL_CHECKOUT=True)
+    def test_missing_logistics_on_second_product_rolls_back_all_stock(self):
+        second = Product.objects.create(
+            store=self.store, category=self.product.category, name="Incomplete",
+            price=20, stock_quantity=5,
+        )
+        self.payload["items"].append({"product_id": second.pk, "quantity": 1})
+        self.assertEqual(self.checkout().status_code, 422)
+        self.assert_no_sale()
+        second.refresh_from_db()
+        self.assertEqual(second.stock_quantity, 5)
