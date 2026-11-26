@@ -168,6 +168,11 @@ jobs:
           python bipdelivery/manage.py seed_dashboard_roles --email admin@example.com --password ci-e2e-throwaway-pw-2026 --staff --role admin
           python bipdelivery/manage.py seed_e2e_demo_data
 
+      - name: Prepare isolated national shipping fixture
+        run: |
+          python bipdelivery/manage.py shell -c 'from bipdelivery.api.models import Store, Product, StoreShippingSettings; s=Store.objects.get(slug="default"); Product.objects.filter(store=s,name="Produto Demo E2E").update(weight_grams=200,length_cm=10,width_cm=8,height_cm=3); c=StoreShippingSettings.get_for_store(s); c.origin_postal_code="40010000"; c.national_shipping_enabled=True; c.package_options=[dict(name="box",length_cm=20,width_cm=15,height_cm=10)]; c.save()'
+          printf '\nBIPFLOW_SIMULATED_NATIONAL_CHECKOUT = True\n' >> bipdelivery/core/settings.py
+
       - name: Start Django backend
         run: |
           python bipdelivery/manage.py runserver 127.0.0.1:8000 > django-e2e.log 2>&1 &
